@@ -8,4 +8,5 @@ These open-source libraries are used by the app and keep their own licences. Eve
 | Leaflet 1.9.4 | Maps | BSD-2-Clause |
 | Leaflet.ImageOverlay.Rotated | Placing site plans on the map | Author's licence (see the project's repository) |
 | JSZip 3.10.1 | Zip files | MIT (dual MIT / GPLv3 – used under MIT) |
+| jsPDF 2.5.1 | Route notes PDF | MIT |
 | SheetJS Community Edition 0.18.5 | Excel files | Apache-2.0 |
