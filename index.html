@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tree Survey</title>
+<meta name="description" content="Offline tree survey capture – GPS, species, dimensions, photos – exported for the report builders.">
+<meta name="theme-color" content="#101f16">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="48x48" href="icons/favicon-48.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="lib/leaflet.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<input type="file" id="gallery" accept="image/*" multiple hidden>
+<input type="file" id="zipin" accept=".zip,application/zip" hidden>
+<script src="lib/jszip.min.js"></script>
+<script src="lib/xlsx.mini.min.js"></script>
+<script src="species.js"></script>
+<script src="osgb.js"></script>
+<script src="lib/leaflet.js"></script>
+<script src="lib/Leaflet.ImageOverlay.Rotated.js"></script>
+<script src="qtra.js"></script>
+<script src="threats.js"></script>
+<script src="cavat_cti.js"></script>
+<script src="cavat.js"></script>
+<script src="fungi.js"></script>
+<script src="defects.js"></script>
+<script src="works.js"></script>
+<script src="vet.js"></script>
+<script src="safety.js"></script>
+<script src="checklists.js"></script>
+<script src="checks.js"></script>
+<script src="laser.js"></script>
+<script src="boltons.js"></script>
+<script src="contractor.js"></script>
+<script src="app.js"></script>
+<script src="map.js"></script>
+<script src="planscale.js"></script>
+</body>
+</html>
