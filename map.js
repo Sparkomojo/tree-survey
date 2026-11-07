@@ -93,6 +93,7 @@ function closeMap() {
 }
 
 function treeColour(job, t) {
+  if (job.trial && t.droneFlag) return { Red: "#C8102E", Amber: "#E8A200", Green: "#2F8A3B" }[t.droneFlag] || "#2F6B3A";  // drone triage
   if (job.type === "WORKS") return { done: "#2F8A3B", part: "#E8A200", notdone: "#C8102E" }[t.wstatus] || "#E07000";
   if (job.type === "BS5837") return CAT_COL[(t.category || "")[0]] || "#2F6B3A";
   const r = (t.recs || "").toLowerCase();

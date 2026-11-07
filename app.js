@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.25";
+const APP_VERSION = "1.26";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -171,6 +171,7 @@ async function route() {
     if (h[0] === "job" && h[2] === "wextra") return await worksExtraPage(h[1]);
     if (h[0] === "job" && h[2] === "qitem") return await quoteItemPage(h[1], h[3]);
     if (h[0] === "quote" && h[1] === "new") return await quoteDetailsPage(null);
+    if (h[0] === "notes") return await routeNotesPage();
     if (h[0] === "job" && h[2] === "feat") return await featurePage(h[1], h[3], h[4]);
     if (h[0] === "job" && h[2] === "featmap") return await featMapPage(h[1], h[3]);
     if (h[0] === "job" && h[2] === "eco") return await ecoListPage(h[1]);
@@ -241,7 +242,8 @@ async function homePage() {
   <header class="top"><h1><img src="icons/favicon-48.png" alt="" class="hlogo">Tree Survey</h1><button aria-label="Settings" onclick="go('#/settings')">⚙</button></header>
   <main>
     ${worksOnly ? "" : `<button class="btn primary block" onclick="go('#/new')">＋ New site survey</button>
-    <button class="btn block" style="margin-top:8px" onclick="go('#/quote/new')">📷 ＋ Quote visit – photos, works, crew and kit</button>`}
+    <button class="btn block" style="margin-top:8px" onclick="go('#/quote/new')">📷 ＋ Quote visit – photos, works, crew and kit</button>
+    <button class="btn block" style="margin-top:8px" onclick="go('#/notes')">📝 Route notes – daily site note (PDF)</button>`}
     <button class="btn block" style="margin-top:8px" onclick="go('#/checks')">✓ Checks – vehicle, plant, kit and site</button>
     ${loneBanner(st_) || `<button class="btn block" style="margin-top:8px" onclick="go('#/lone')">🛡 Lone working – check in</button>`}
     ${jobs.length ? jobs.map(j => isWorks(j) ? worksCard(j) : isQuote(j) ? quoteCard(j) : `
@@ -295,6 +297,7 @@ async function detailsPage(id) {
     <div id="fmtwrap" hidden><label>Report format (Scottish Woodlands)</label>
       <div class="chips" id="format">${[["Roadside/PROW", "Roadside / PROW"], ["Parkland", "Parkland (AMR)"]].map(([v, l]) => `<button class="chip ${job.format === v ? "on" : ""}" data-v="${v}">${l}</button>`).join("")}</div></div>
     <label class="check" id="bandswrap"><input type="checkbox" id="bands" ${job.bands ? "checked" : ""}> Record height, DBH and spread in bands (e.g. 6 - 10 m)</label>
+    <label class="check"><input type="checkbox" id="trial" ${job.trial ? "checked" : ""}> Drone method trial – record the method, a drone flag (red / amber / green), the time and the time beside live traffic for each tree</label>
     <label>Risk / valuation methods on this survey</label>
     <div class="chips" id="riskMethods">${RISK_METHODS.map(m => `<button class="chip ${riskMethods(job).includes(m) ? "on" : ""}" data-v="${m}">${m}</button>`).join("")}</div>
     <div id="cavatwrap" ${riskMethods(job).includes("CAVAT") ? "" : "hidden"}><div class="hint" id="ctiOut"></div></div>
@@ -334,6 +337,7 @@ async function detailsPage(id) {
   $("#type").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; job.type = b.dataset.v; $("#type").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); showFmt(); boltDetails(job, s); };
   $("#format").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; job.format = b.dataset.v; if (job.format === "Roadside/PROW") { job.bands = true; $("#bands").checked = true; } showFmt(); };
   $("#bands").onchange = e => { job.bands = e.target.checked; };
+  $("#trial").onchange = e => { job.trial = e.target.checked; };
   $("#riskMethods").onclick = e => {
     const b = e.target.closest(".chip"); if (!b) return;
     const cur = new Set(riskMethods(job)); cur.has(b.dataset.v) ? cur.delete(b.dataset.v) : cur.add(b.dataset.v);
@@ -431,6 +435,8 @@ async function jobPage(id, treesOnly) {
           <div class="rec">${esc(t.recs || t.comments || "")}</div>
         </div></a>`).join("") || `<div class="empty">No trees yet.<br>Stand by the first tree and tap <b>＋ Tree</b>.</div>`}</div>
     <p class="hint">${trees.length} tree${trees.length === 1 ? "" : "s"} · ${photos.length} photo${photos.length === 1 ? "" : "s"}</p>
+    ${job.trial ? (() => { const n = f => trees.filter(t => t.droneFlag === f).length, g = n("Red") + n("Amber");
+      return `<p class="hint">🛩 Drone flags: <b style="color:#C8102E">${n("Red")} red</b> · <b style="color:#B07A00">${n("Amber")} amber</b> · <b style="color:#2F8A3B">${n("Green")} green</b>${g ? ` – ${g} ground check${g === 1 ? "" : "s"} to do` : ""}</p>`; })() : ""}
   </main>
   <button class="btn primary fab" onclick="go('#/job/${id}/tree/new')">＋ Tree</button>`;
   const q = $("#q");
@@ -484,6 +490,8 @@ async function treePage(jobId, treeId) {
   if (t.adb) t.adb = adbFix(t.adb);
   const bandChips = k => `<div class="chips bands" data-band="${k}">${BANDS[k].map(b => `<button class="chip small ${t[k] === b ? "on" : ""}" data-v="${b}">${b}</button>`).join("")}</div>`;
   let persisted = !isNew, dirty = false, saveTimer = null;
+  const opened = Date.now(), sec0 = t.surveySec || 0;  // drone method trial: time spent on this tree
+  const stampTime = () => { if (job.trial) t.surveySec = Math.round(sec0 + (Date.now() - opened) / 1000); };
   const recentSpecies = [...new Set(all.sort((a, b) => (b.updated || 0) - (a.updated || 0)).map(x => x.species).filter(Boolean))].slice(0, 6);
 
   const methods = riskMethods(job), useValid = rs || methods.includes("VALID"), useThreats = methods.includes("THREATS") && !rs;
@@ -627,6 +635,14 @@ async function treePage(jobId, treeId) {
       <div class="roh" id="cvOut"></div></details>` : ""}
     ${vetBox(t)}
     ${boltTreeBoxes(t, job, s)}
+    ${job.trial ? `<details class="more" id="trialBox" open><summary>🛩 Drone method trial</summary>
+      <label>Method for this tree</label>${pick("method", ["Ground", "Drone", "Drone + ground"])}
+      <label>Drone flag</label>${pick("droneFlag", ["Red", "Amber", "Green"])}
+      <p class="hint">Red – ground check straight away · Amber – ground check · Green – no ground check needed.</p>
+      <label for="f_exposure">Time beside live traffic (minutes)</label>
+      <input id="f_exposure" data-f="exposureMin" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(t.exposureMin ?? "")}">
+      <p class="hint">Time on this tree: <b id="trialTime">${Math.round((t.surveySec || 0) / 60)} min</b> – counted while the tree is open.</p>
+    </details>` : ""}
     <div class="saved" id="saved">${persisted ? "Saved" : ""}</div>
   </main>
   <div class="bar"><button class="btn" id="done">✓ Done</button><button class="btn primary" id="next">Save &amp; next tree ›</button></div>`;
@@ -635,6 +651,7 @@ async function treePage(jobId, treeId) {
   async function saveNow() {
     clearTimeout(saveTimer);
     if (!dirty) return;
+    stampTime();
     t.tag = (t.tag || "").trim().toUpperCase();
     t.updated = Date.now();
     await DB.put("trees", t);
@@ -645,7 +662,8 @@ async function treePage(jobId, treeId) {
   const touch = () => { dirty = true; $("#saved").textContent = "Saving…"; clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 400); };
   // A new tree is only kept once something is entered (or you press Save): the automatic GPS fix on its own doesn't
   // count, so opening ＋ Tree (or Save & next tree) and going back no longer leaves an empty "Species?" tree behind.
-  leaveHook = async () => { stopGps(); if (dirty || (!persisted && hasDetails())) { dirty = true; await saveNow(); } };
+  leaveHook = async () => { stopGps(); if (job.trial && persisted) dirty = true;  // keep the time spent on the tree
+    if (dirty || (!persisted && hasDetails())) { dirty = true; await saveNow(); } };
   const hasDetails = () => ["species", "height", "dbh", "comments", "recs", "urgent"].some(k => t[k]) || (t.speciesMore || []).length > 0;
   const hasContent = () => hasDetails() || !!t.lat;
 
