@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 // QTRA: no Risk of Harm calculator is built into the app (pending confirmation from QTRA Ltd).
 // Enter the Risk of Harm from your own QTRA calculator; the app only shows which Tolerability of Risk band it falls in.
 const QTRA = (() => {

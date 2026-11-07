@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Tree Survey – size, position and direction of defects and features.
    Tapping an observation phrase opens a small panel: part of the tree, height, side (compass), size.
    It writes a sentence into Observations, e.g.

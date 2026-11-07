@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Tree Survey – bolt-ons.
    - Nesting bird / pre-clearance checks: nests plotted with exclusion zones (5 / 10 / 15 / 20 / 30 / 50 m or custom),
      BoCC5 status (Red / Amber / Green) and Wildlife and Countryside Act Schedule 1 flags, re-check dates.

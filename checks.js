@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Checks – vehicle, trailer and plant pre-use checks, climbing / MEWP kit, drone pre-flight and the on-site
    risk assessment for tree work. The checklists come from checklists.js (made on the PC from Checklists.xlsx).
    Each completed check is kept on the device ("checks" store) with its answers, notes and signatures, and

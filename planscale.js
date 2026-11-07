@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Tree Survey – site plan of unknown scale, and map layers.
    Scale:  tap two points on the plan you can measure between on site, type the tape / laser distance → metres per pixel.
            A second measurement checks it (and, if the plan is stretched, gives a separate across / down scale).

@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Laser rangefinders over Bluetooth Low Energy (Web Bluetooth – Chrome on Android; not iPhone / iPad).
    TruPulse 200i / 360i (Laser Technology): "LTI Data Exchange" service, $PLTIT sentences –
      $PLTIT,HV,<HD>,<u>,<AZ>,D,<INC>,D,<SD>,<u>*cs   horizontal vector (360i gives the azimuth)

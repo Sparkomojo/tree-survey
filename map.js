@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Tree Survey – map, site plan and positioning without GPS.
    - Map page: trees on a street map (online) and/or the site plan (works offline).
    - Pick on map: pan the map so the cross is on the tree, tap "Use this spot".

@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* THREATS – Tree Hazard: Risk Evaluation and Treatment System (Julian Forbes-Laird, 2010).
    Scores and category bands follow the published guidance note; the method's terms are kept exactly,
    because changing them would mean it could no longer be called THREATS. */

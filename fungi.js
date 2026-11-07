@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 // Tree fungi and diseases (generated from UK_Tree_Fungi.xlsx – edit the spreadsheet script, not this file)
 const FUNGI = [
 {

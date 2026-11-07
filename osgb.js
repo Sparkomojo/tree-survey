@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 // WGS84 (phone GPS) -> OS National Grid reference, e.g. "NZ 15862 57871".
 // Helmert transform + Transverse Mercator; accurate to a few metres (better than phone GPS).
 const OSGB = (() => {

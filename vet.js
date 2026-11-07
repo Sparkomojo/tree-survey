@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Veteran / ancient tree record – the data sections of the Specialist Survey Method (Fay & de Berker 1997,
    as listed in Lonsdale (ed.) 2013, Ancient and other veteran trees: further guidance on management, Appendix A).
    Labels are ours; the record builds a short summary sentence for the report. */

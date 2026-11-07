@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Site safety check – the on-arrival (dynamic) risk assessment that goes with the job's RAMS.
    Stored on the job (job.safety, newest last), exported as "Site safety check.txt" in the survey zip. */
 "use strict";

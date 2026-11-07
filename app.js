@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Tree Survey – offline field capture for the AMR / BS5837 report builders.
    Everything is stored on the device (IndexedDB). Export makes a zip:
      Survey.xlsx or BS5837_Survey.xlsx  – columns the report builders read
@@ -7,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.23";
+const APP_VERSION = "1.24";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -224,6 +225,7 @@ function installPage() {
       <b>Tree Survey</b> in the Start menu.</li></ol>
     <p class="hint">Updates arrive by themselves: open the app with signal (open it a second time if the version number in ⚙ Settings hasn't changed).</p>
     <p class="hint">This is version ${APP_VERSION}${installed() ? " – running as an installed app" : ""}.</p>
+    <p class="hint">Tree Survey © 2026 Mark Johnson. All rights reserved.</p>
   </main>`;
 }
 
@@ -636,8 +638,11 @@ async function treePage(jobId, treeId) {
     $("#saved") && ($("#saved").textContent = "Saved ✓");
   }
   const touch = () => { dirty = true; $("#saved").textContent = "Saving…"; clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 400); };
-  leaveHook = async () => { stopGps(); if (dirty || (!persisted && hasContent())) { dirty = true; await saveNow(); } };
-  const hasContent = () => ["species", "height", "dbh", "comments", "recs", "lat", "urgent"].some(k => t[k]) || (t.speciesMore || []).length > 0;
+  // A new tree is only kept once something is entered (or you press Save): the automatic GPS fix on its own doesn't
+  // count, so opening ＋ Tree (or Save & next tree) and going back no longer leaves an empty "Species?" tree behind.
+  leaveHook = async () => { stopGps(); if (dirty || (!persisted && hasDetails())) { dirty = true; await saveNow(); } };
+  const hasDetails = () => ["species", "height", "dbh", "comments", "recs", "urgent"].some(k => t[k]) || (t.speciesMore || []).length > 0;
+  const hasContent = () => hasDetails() || !!t.lat;
 
   app.querySelectorAll("[data-f]").forEach(el => el.addEventListener("input", () => {
     t[el.dataset.f] = el.value;
@@ -818,7 +823,7 @@ async function treePage(jobId, treeId) {
     if ($("#zoneOut")) $("#zoneOut").textContent = t.zone ? "Zone: " + t.zone : "";
     $("#gref").textContent = t.grid || `${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
     $("#gstat").textContent = `±${Math.round(t.acc)} m · ${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
-    if (persisted || hasContent()) touch();
+    if (persisted || hasDetails()) touch();
   };
   const setState = (st, msg) => {
     const dot = $("#gdot"); if (!dot) return;
@@ -950,7 +955,8 @@ async function treePage(jobId, treeId) {
   if ($("#del")) $("#del").onclick = async () => {
     if (!confirm(`Delete ${t.tag} and its photos?`)) return;
     for (const p of await DB.by("photos", "tree", t.id)) await DB.del("photos", p.id);
-    await DB.del("trees", t.id); leaveHook = null; stopGps(); go("#/job/" + jobId);
+    await DB.del("trees", t.id); leaveHook = null; stopGps(); await touchJob(job);
+    toast(`${t.tag} deleted`); go("#/job/" + jobId);
   };
 }
 
@@ -1099,7 +1105,7 @@ async function settingsPage() {
     <button class="btn small" id="reset" style="margin-top:8px">Reset phrases to defaults</button>
     <h2>Storage</h2>
     <p class="hint">${est}. ${persisted ? "✓ Protected – the browser won't clear it to save space." : "Not yet protected from automatic clean-up. Installing the app (menu ⋮ → Install app) usually fixes this."}</p>
-    <p class="hint">Tree Survey ${APP_VERSION}</p>
+    <p class="hint">Tree Survey ${APP_VERSION} · © 2026 Mark Johnson. All rights reserved.</p>
   </main>
   <div class="bar"><button class="btn primary" id="save">Save</button></div>`;
   $("#reset").onclick = () => { for (const k of Object.keys(DEFAULT_PHRASES)) $("#p_" + k).value = DEFAULT_PHRASES[k].join("\n"); };

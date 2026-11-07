@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Made by compliance.py from Checklists.xlsx – edit the spreadsheet, not this file. */
 const CHECKLISTS = [
  {

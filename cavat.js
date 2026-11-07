@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* CAVAT Full Method (Capital Asset Value for Amenity Trees – LTOA; Guide for Practitioners).
    base = UVF × π(d/2)²  (d in cm, rounded down; multi-stem: stem areas added)
    location = base × CTI × visibility × (1 + positive − negative)

@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 // Species pick-list: "Botanical - Common" (the format the report builders split on).
 // Anything typed that isn't in the list is kept exactly as typed.
 const SPECIES = `Abies alba - Silver fir

@@ -1,0 +1,15 @@
+Tree Survey
+Copyright (c) 2026 Mark Johnson. All rights reserved.
+
+This software - the Tree Survey app, its source code, wording, checklists, species and hazard lists, icons and
+design - is the property of Mark Johnson and is protected by copyright.
+
+The code is published in this repository only so the app can be served from GitHub Pages. That is not a licence.
+No permission is given to copy, modify, distribute, sell, sublicense or make derivative works from any part of it,
+except under a written licence signed by Mark Johnson, or where UK law allows it whatever a licence says.
+
+Using the app at sparkomojo.github.io/tree-survey does not transfer any rights in it.
+
+The open-source libraries in lib/ remain under their own licences (see THIRD_PARTY_NOTICES.md).
+
+The software is provided without any warranty.

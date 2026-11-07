@@ -1,3 +1,4 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Tree Survey – works builder.
    Tapping "＋ Works" opens a panel: choose the operation, fill in what BS 3998:2010 says a specification
    needs (final dimensions, %, clearance and where it's measured from…), pick a timescale, and a clear
