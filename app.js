@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.24";
+const APP_VERSION = "1.25";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -169,6 +169,8 @@ async function route() {
     if (h[0] === "job" && h[2] === "wmap") return await worksMapPage(h[1], h[3]);
     if (h[0] === "job" && h[2] === "wdone") return await worksDonePage(h[1]);
     if (h[0] === "job" && h[2] === "wextra") return await worksExtraPage(h[1]);
+    if (h[0] === "job" && h[2] === "qitem") return await quoteItemPage(h[1], h[3]);
+    if (h[0] === "quote" && h[1] === "new") return await quoteDetailsPage(null);
     if (h[0] === "job" && h[2] === "feat") return await featurePage(h[1], h[3], h[4]);
     if (h[0] === "job" && h[2] === "featmap") return await featMapPage(h[1], h[3]);
     if (h[0] === "job" && h[2] === "eco") return await ecoListPage(h[1]);
@@ -238,10 +240,11 @@ async function homePage() {
   app.innerHTML = `
   <header class="top"><h1><img src="icons/favicon-48.png" alt="" class="hlogo">Tree Survey</h1><button aria-label="Settings" onclick="go('#/settings')">⚙</button></header>
   <main>
-    ${worksOnly ? "" : `<button class="btn primary block" onclick="go('#/new')">＋ New site survey</button>`}
+    ${worksOnly ? "" : `<button class="btn primary block" onclick="go('#/new')">＋ New site survey</button>
+    <button class="btn block" style="margin-top:8px" onclick="go('#/quote/new')">📷 ＋ Quote visit – photos, works, crew and kit</button>`}
     <button class="btn block" style="margin-top:8px" onclick="go('#/checks')">✓ Checks – vehicle, plant, kit and site</button>
     ${loneBanner(st_) || `<button class="btn block" style="margin-top:8px" onclick="go('#/lone')">🛡 Lone working – check in</button>`}
-    ${jobs.length ? jobs.map(j => isWorks(j) ? worksCard(j) : `
+    ${jobs.length ? jobs.map(j => isWorks(j) ? worksCard(j) : isQuote(j) ? quoteCard(j) : `
       <a class="card job" href="#/job/${j.id}">
         <h3>${esc(j.site || "Untitled site")}</h3>
         <div class="meta"><span class="badge ${j.type === "BS5837" ? "bs" : j.type === "NEST" ? "nest" : ""}">${esc(TYPE_LABEL[j.type] || j.type)}</span>
@@ -279,6 +282,7 @@ async function laLookup(address) {
 
 // ------------------------------------------------------------------ job details (new / edit)
 async function detailsPage(id) {
+  if (id && isQuote(await DB.get("jobs", id))) return quoteDetailsPage(id);
   const s = await settings();
   const job = id ? await DB.get("jobs", id) : { id: uid(), type: "AMR", client: "", site: "", address: "", surveyDate: today(), weather: "", siteDescription: "", notes: "", consultant: s.consultant, created: Date.now() };
   if (!job) return go("#/");
@@ -395,6 +399,7 @@ async function jobPage(id, treesOnly) {
   if (!job) return go("#/");
   if (job.type === "NEST" && !treesOnly) return nestJobPage(job);
   if (isWorks(job)) return worksJobPage(job);  // a contractor's works order (works pack from the PC)
+  if (isQuote(job)) return quotePage(job);      // a site visit before quoting (quote.js)
   const bo = bolts(job), feats = await DB.by("features", "job", id);
   const trees = (await DB.by("trees", "job", id)).sort(byTag);
   const photos = await DB.by("photos", "job", id);

@@ -240,3 +240,17 @@ details.hz ul { margin: 6px 0 0 18px; padding: 0; font-size: 14px; }
 .warn.danger { background: #fde2e1; color: #8a1010; }
 a.btn { text-decoration: none; color: inherit; }
 a.btn.primary { color: var(--accent-ink); }
+
+/* quote visits */
+.badge.quote { background: #e6f4ea; color: #1e6b2a; }
+.qthumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin: 6px 0; }
+.qthumb { padding: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; text-align: left; }
+.qthumb img { width: 100%; height: 86px; object-fit: cover; display: block; }
+.qthumb span { display: block; font-size: 12px; padding: 3px 6px; min-height: 18px; color: var(--ink, #16261b); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.qcrew { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.qcrew span { flex: 1; font-size: 15px; color: #6b766d; }
+.qcrew.on span { color: var(--ink, #16261b); font-weight: 600; }
+.qcrew button { width: 40px; height: 40px; border-radius: 99px; border: 1px solid var(--line); background: #fff; font-size: 20px; }
+.qcrew b { min-width: 22px; text-align: center; }
+.qcat { border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; margin: 6px 0; background: #fff; }
+.qcat summary { font-weight: 600; cursor: pointer; padding: 4px 0; }

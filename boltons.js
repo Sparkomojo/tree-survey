@@ -12,7 +12,7 @@
 
 const BOLT_LIST = [["nest", "🐦 Nesting birds"], ["bat", "🦇 Bats (tree roosts)"], ["eco", "🦡 Ecology"], ["bng", "🌿 BNG tree baseline"]];
 const bolts = job => Object.assign({}, job.bolts || {}, job.type === "NEST" ? { nest: true } : {});
-const TYPE_LABEL = { AMR: "AMR", BS5837: "BS5837", NEST: "Nesting birds", PROPERTY: "Property", WORKS: "Works order" };
+const TYPE_LABEL = { AMR: "AMR", BS5837: "BS5837", NEST: "Nesting birds", PROPERTY: "Property", WORKS: "Works order", QUOTE: "Quote visit" };
 
 // ------------------------------------------------------------------ birds
 // Birds of Conservation Concern 5 (2021): R / A / G ("" = not assessed or check); S1 = Schedule 1, WCA 1981.

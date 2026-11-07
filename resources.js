@@ -1,0 +1,482 @@
+// Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
+/* Made by quote_visit.py from Resources_Library.xlsx – edit the spreadsheet, not this file. */
+const RESOURCES = {
+ "crew": [
+  "Climber",
+  "Climber - rigging / dismantling",
+  "Groundsperson - aerial rescuer",
+  "Groundsperson",
+  "Chainsaw operator - felling up to 380 mm",
+  "Chainsaw operator - felling over 380 mm",
+  "MEWP operator - chainsaw from a platform",
+  "Chipper operator",
+  "Stump grinder operator",
+  "Hedge cutting operative",
+  "Traffic management operative",
+  "Slinger / signaller",
+  "Team leader / supervisor"
+ ],
+ "plant": [
+  "Crew vehicle (4x4 / pickup)",
+  "Vehicle and trailer",
+  "Tipper / chip truck",
+  "Woodchipper",
+  "Stump grinder",
+  "MEWP - tracked spider lift",
+  "MEWP - vehicle mounted",
+  "Tracked dumper / timber carrier",
+  "Mini digger / grab",
+  "Log splitter",
+  "Crane (contract lift, with operator)",
+  "Chapter 8 vehicle (beacons, chevrons)",
+  "Welfare unit"
+ ],
+ "equipment": [
+  [
+   "Chainsaws and cutting",
+   "Top-handled chainsaw"
+  ],
+  [
+   "Chainsaws and cutting",
+   "Rear-handled chainsaw (small)"
+  ],
+  [
+   "Chainsaws and cutting",
+   "Rear-handled chainsaw (large bar)"
+  ],
+  [
+   "Chainsaws and cutting",
+   "Pole saw (powered)"
+  ],
+  [
+   "Chainsaws and cutting",
+   "Handsaws and secateurs"
+  ],
+  [
+   "Chainsaws and cutting",
+   "Hedge trimmer"
+  ],
+  [
+   "Chainsaws and cutting",
+   "Long-reach hedge trimmer"
+  ],
+  [
+   "Chainsaws and cutting",
+   "Brushcutter / clearing saw"
+  ],
+  [
+   "Chainsaws and cutting",
+   "Chainsaw fuel, oil and spares"
+  ],
+  [
+   "Climbing and rescue",
+   "Climbing kit - two-rope system (per climber)"
+  ],
+  [
+   "Climbing and rescue",
+   "Aerial rescue kit (ground)"
+  ],
+  [
+   "Climbing and rescue",
+   "Throw line kit"
+  ],
+  [
+   "Climbing and rescue",
+   "Climbing spikes (removals only)"
+  ],
+  [
+   "Rigging and lowering",
+   "Rigging rope"
+  ],
+  [
+   "Rigging and lowering",
+   "Friction device (Port-a-wrap / GRCS)"
+  ],
+  [
+   "Rigging and lowering",
+   "Rigging blocks and pulleys"
+  ],
+  [
+   "Rigging and lowering",
+   "Slings and strops"
+  ],
+  [
+   "Felling",
+   "Felling wedges"
+  ],
+  [
+   "Felling",
+   "Felling lever / breaking bar"
+  ],
+  [
+   "Felling",
+   "Hand winch and strops"
+  ],
+  [
+   "Felling",
+   "Pull line"
+  ],
+  [
+   "Site and safety",
+   "Barriers and warning signs"
+  ],
+  [
+   "Site and safety",
+   "Chapter 8 signs, cones and lamps"
+  ],
+  [
+   "Site and safety",
+   "Stop / Go boards"
+  ],
+  [
+   "Site and safety",
+   "Ground protection mats"
+  ],
+  [
+   "Site and safety",
+   "Tarpaulins and rakes"
+  ],
+  [
+   "Site and safety",
+   "Leaf blower"
+  ],
+  [
+   "Site and safety",
+   "Cable avoidance tool (CAT) and genny"
+  ],
+  [
+   "Site and safety",
+   "Debris screens"
+  ],
+  [
+   "Site and safety",
+   "Spill kit"
+  ],
+  [
+   "Site and safety",
+   "Fire extinguisher"
+  ],
+  [
+   "First aid and welfare",
+   "First aid kit with catastrophic bleed kit"
+  ],
+  [
+   "First aid and welfare",
+   "Welfare - hand washing and drinking water"
+  ],
+  [
+   "First aid and welfare",
+   "Phones / radios"
+  ]
+ ],
+ "works": [
+  {
+   "key": "fell_small",
+   "name": "Fell small trees (up to 380 mm)",
+   "crew": [
+    [
+     "Chainsaw operator - felling up to 380 mm",
+     1
+    ],
+    [
+     "Groundsperson",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)"
+   ],
+   "equipment": [
+    "Rear-handled chainsaw (small)",
+    "Felling wedges",
+    "Felling lever / breaking bar"
+   ]
+  },
+  {
+   "key": "fell_large",
+   "name": "Fell larger trees (over 380 mm)",
+   "crew": [
+    [
+     "Chainsaw operator - felling over 380 mm",
+     1
+    ],
+    [
+     "Groundsperson",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)"
+   ],
+   "equipment": [
+    "Rear-handled chainsaw (large bar)",
+    "Felling wedges",
+    "Felling lever / breaking bar",
+    "Hand winch and strops",
+    "Pull line"
+   ]
+  },
+  {
+   "key": "dismantle",
+   "name": "Section fell / dismantle by climbing",
+   "crew": [
+    [
+     "Climber - rigging / dismantling",
+     1
+    ],
+    [
+     "Groundsperson - aerial rescuer",
+     1
+    ],
+    [
+     "Groundsperson",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)",
+    "Woodchipper"
+   ],
+   "equipment": [
+    "Climbing kit - two-rope system (per climber)",
+    "Aerial rescue kit (ground)",
+    "Throw line kit",
+    "Climbing spikes (removals only)",
+    "Top-handled chainsaw",
+    "Rear-handled chainsaw (large bar)",
+    "Rigging rope",
+    "Friction device (Port-a-wrap / GRCS)",
+    "Rigging blocks and pulleys",
+    "Slings and strops"
+   ]
+  },
+  {
+   "key": "prune_climb",
+   "name": "Prune / reduce by climbing",
+   "crew": [
+    [
+     "Climber",
+     1
+    ],
+    [
+     "Groundsperson - aerial rescuer",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)",
+    "Woodchipper"
+   ],
+   "equipment": [
+    "Climbing kit - two-rope system (per climber)",
+    "Aerial rescue kit (ground)",
+    "Throw line kit",
+    "Top-handled chainsaw",
+    "Handsaws and secateurs",
+    "Pole saw (powered)",
+    "Rigging rope",
+    "Friction device (Port-a-wrap / GRCS)",
+    "Slings and strops"
+   ]
+  },
+  {
+   "key": "mewp",
+   "name": "Prune / dismantle from a MEWP",
+   "crew": [
+    [
+     "MEWP operator - chainsaw from a platform",
+     1
+    ],
+    [
+     "Groundsperson",
+     1
+    ]
+   ],
+   "plant": [
+    "MEWP - tracked spider lift"
+   ],
+   "equipment": [
+    "Top-handled chainsaw",
+    "Rigging rope",
+    "Friction device (Port-a-wrap / GRCS)",
+    "Slings and strops",
+    "Ground protection mats"
+   ]
+  },
+  {
+   "key": "ground_prune",
+   "name": "Crown lift / deadwood from the ground",
+   "crew": [
+    [
+     "Chainsaw operator - felling up to 380 mm",
+     1
+    ],
+    [
+     "Groundsperson",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)"
+   ],
+   "equipment": [
+    "Pole saw (powered)",
+    "Handsaws and secateurs",
+    "Rear-handled chainsaw (small)"
+   ]
+  },
+  {
+   "key": "hedge",
+   "name": "Hedge cutting / trimming",
+   "crew": [
+    [
+     "Hedge cutting operative",
+     1
+    ],
+    [
+     "Groundsperson",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)"
+   ],
+   "equipment": [
+    "Hedge trimmer",
+    "Long-reach hedge trimmer",
+    "Tarpaulins and rakes",
+    "Leaf blower"
+   ]
+  },
+  {
+   "key": "clearance",
+   "name": "Scrub and undergrowth clearance",
+   "crew": [
+    [
+     "Groundsperson",
+     2
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)"
+   ],
+   "equipment": [
+    "Brushcutter / clearing saw",
+    "Tarpaulins and rakes"
+   ]
+  },
+  {
+   "key": "chip",
+   "name": "Chip brash on site",
+   "crew": [
+    [
+     "Chipper operator",
+     1
+    ]
+   ],
+   "plant": [
+    "Woodchipper"
+   ],
+   "equipment": [
+    "Tarpaulins and rakes"
+   ]
+  },
+  {
+   "key": "stump",
+   "name": "Stump grinding",
+   "crew": [
+    [
+     "Stump grinder operator",
+     1
+    ]
+   ],
+   "plant": [
+    "Stump grinder"
+   ],
+   "equipment": [
+    "Cable avoidance tool (CAT) and genny",
+    "Debris screens",
+    "Tarpaulins and rakes"
+   ]
+  },
+  {
+   "key": "road",
+   "name": "Work on or next to a road",
+   "crew": [
+    [
+     "Traffic management operative",
+     1
+    ]
+   ],
+   "plant": [
+    "Chapter 8 vehicle (beacons, chevrons)"
+   ],
+   "equipment": [
+    "Chapter 8 signs, cones and lamps",
+    "Stop / Go boards"
+   ]
+  },
+  {
+   "key": "crane",
+   "name": "Crane-assisted dismantle",
+   "crew": [
+    [
+     "Climber - rigging / dismantling",
+     1
+    ],
+    [
+     "Groundsperson - aerial rescuer",
+     1
+    ],
+    [
+     "Slinger / signaller",
+     1
+    ]
+   ],
+   "plant": [
+    "Crane (contract lift, with operator)"
+   ],
+   "equipment": [
+    "Climbing kit - two-rope system (per climber)",
+    "Aerial rescue kit (ground)",
+    "Top-handled chainsaw",
+    "Slings and strops"
+   ]
+  },
+  {
+   "key": "removal",
+   "name": "Take the arisings away",
+   "crew": [],
+   "plant": [
+    "Tipper / chip truck"
+   ],
+   "equipment": [
+    "Tarpaulins and rakes",
+    "Ground protection mats"
+   ]
+  },
+  {
+   "key": "logs",
+   "name": "Cut and stack logs on site",
+   "crew": [
+    [
+     "Groundsperson",
+     1
+    ]
+   ],
+   "plant": [
+    "Log splitter"
+   ],
+   "equipment": [
+    "Rear-handled chainsaw (small)"
+   ]
+  }
+ ],
+ "basic": [
+  "Barriers and warning signs",
+  "Chainsaw fuel, oil and spares",
+  "First aid kit with catastrophic bleed kit",
+  "Spill kit",
+  "Phones / radios"
+ ]
+};
