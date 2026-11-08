@@ -1,7 +1,8 @@
 // Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 /* Route notes – the daily site note for highway route surveys (EM / WM network): date, route, what3words, distance,
    team, species (tap once = standard stock, twice = occasional), defects and access in your usual sentences, extra
-   notes, up to 3 photos. Save PDF makes "Site_Notes_DD_MM_YYYY_<route>.pdf": the text page, then one photo a page.
+   notes, any number of photos with captions. Save PDF makes "Site_Notes_DD_MM_YYYY_<route>.pdf": the text page, then the
+   photos four to a page (2 × 2), each with its number and caption.
    New day keeps the route, team and species. Everything stays on the phone (Settings store). */
 
 const RN_SPECIES = ["Ash", "Birch", "Field maple", "Hawthorn", "Willow", "Oak", "Sycamore", "Elm", "Scots pine", "Blackthorn", "Hazel",
@@ -42,8 +43,12 @@ const RN_ACCESS = [
 ];
 
 function rnBlank() { return { date: today(), site: "", w3w: "", dist: "", team: "lone", col: "", species: {}, defects: {}, access: {},
-  obsExtra: "", conExtra: "", photos: [null, null, null], custom: { species: [], defects: [], access: [] }, sites: [] }; }
-async function rnLoad() { const st = await settings(); st.routeNotes = Object.assign(rnBlank(), st.routeNotes || {}); return st; }
+  obsExtra: "", conExtra: "", photos: [], custom: { species: [], defects: [], access: [] }, sites: [] }; }
+async function rnLoad() {
+  const st = await settings(); st.routeNotes = Object.assign(rnBlank(), st.routeNotes || {});
+  st.routeNotes.photos = (st.routeNotes.photos || []).filter(Boolean);   // older notes kept 3 fixed slots
+  return st;
+}
 
 function rnChips(n, kind) {
   const base = kind === "species" ? RN_SPECIES.map(s => [s, s]) : kind === "defects" ? RN_DEFECTS : RN_ACCESS;
@@ -97,10 +102,17 @@ async function rnPDF(n) {
     if (y + t.length * 5.2 > 280) { doc.addPage(); y = 25; }
     doc.text(t, L, y); y += t.length * 5.2 + 6;
   });
-  n.photos.filter(Boolean).forEach(p => {
-    doc.addPage();
-    const r = Math.min(160 / p.w, 247 / p.h), w = p.w * r, h = p.h * r;
-    doc.addImage(p.url, "JPEG", (210 - w) / 2, 25, w, h);
+  // photos: four to a page, 2 × 2, each with "Photo n – caption" underneath
+  const ph = n.photos.filter(Boolean), CW = 78, CH = 100, GX = 4, X0 = (210 - 2 * CW - GX) / 2, Y0 = 22, CAP = 16;
+  ph.forEach((p, i) => {
+    const k = i % 4;
+    if (k === 0) { doc.addPage(); doc.setFontSize(9); doc.setTextColor(110); doc.text(`Site Notes – ${ukDate(n.date)} – ${n.site.trim()}`, X0, 14); doc.setTextColor(0); }
+    const cx = X0 + (k % 2) * (CW + GX), cy = Y0 + Math.floor(k / 2) * (CH + CAP + 8);
+    const r = Math.min(CW / p.w, CH / p.h), w = p.w * r, h = p.h * r;
+    doc.addImage(p.url, "JPEG", cx + (CW - w) / 2, cy + (CH - h) / 2, w, h);
+    doc.setFontSize(9);
+    const t = doc.splitTextToSize(`Photo ${i + 1}${(p.cap || "").trim() ? " – " + p.cap.trim() : ""}`, CW);
+    doc.text(t.slice(0, 3), cx, cy + CH + 5);
   });
   return doc.output("blob");
 }
@@ -131,9 +143,12 @@ async function routeNotesPage() {
       <h2>Constraints and access</h2><div class="chips">${chips("access")}</div>
       <div class="row"><input id="rn_add_access" placeholder="Add another (as a sentence)"><button class="btn small" data-add="access">Add</button></div>
       <label for="rn_con">Extra constraints</label><textarea id="rn_con" rows="2">${esc(n.conExtra)}</textarea>
-      <h2>Photos</h2><p class="hint">Up to 3 – each on its own page of the PDF.</p>
-      <div class="qthumbs">${n.photos.map((p, i) => p ? `<button class="qthumb" data-ph="${i}"><img src="${p.url}" alt=""><span>Tap to remove</span></button>`
-        : `<button class="qthumb rnadd" data-add-ph="${i}"><span style="font-size:28px;text-align:center;padding:26px 0">＋</span></button>`).join("")}</div>
+      <h2>Photos (${n.photos.length})</h2><p class="hint">As many as you need – four to a page in the PDF, each with its caption.</p>
+      ${n.photos.map((p, i) => `<div class="card rnph" style="display:flex;gap:10px;align-items:flex-start">
+        <img src="${p.url}" alt="" style="width:96px;height:96px;object-fit:cover;border-radius:6px;flex:none">
+        <div style="flex:1"><label for="rn_cap${i}">Photo ${i + 1} caption</label><textarea id="rn_cap${i}" data-cap="${i}" rows="2" placeholder="e.g. Ash with dieback, verge at MP 123/4">${esc(p.cap || "")}</textarea>
+          <div class="row" style="margin-top:4px">${i ? `<button class="btn small" data-up="${i}">↑</button>` : ""}<button class="btn small" data-ph="${i}">Remove</button></div></div></div>`).join("")}
+      <div class="row"><button class="btn" id="rn_cam">📷 Take photo</button><button class="btn" id="rn_gal">🖼 From gallery</button></div>
       <h2>Preview</h2><div class="card" id="rn_prev" style="white-space:pre-wrap;font-family:Georgia,serif;font-size:14px"></div>
     </main>
     <div class="bar"><button class="btn" id="rn_new">New day</button><button class="btn primary" id="rn_pdf">Save PDF</button></div>`;
@@ -155,17 +170,23 @@ async function routeNotesPage() {
       if (!rnChips(n, k).some(c => c[0] === label)) n.custom[k].push([label, text]);
       n[k][label] = 1; save(); draw();
     });
-    app.querySelectorAll("[data-ph]").forEach(b => b.onclick = () => { if (confirm("Remove this photo?")) { n.photos[+b.dataset.ph] = null; save(); draw(); } });
-    app.querySelectorAll("[data-add-ph]").forEach(b => b.onclick = () => pickFiles("#cam", async files => {
-      if (!files[0]) return;
-      const blob = await shrink(files[0], 1800);
-      const bmp = await createImageBitmap(blob), url = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
-      n.photos[+b.dataset.addPh] = { url, w: bmp.width, h: bmp.height }; bmp.close && bmp.close();
+    app.querySelectorAll("[data-ph]").forEach(b => b.onclick = () => { if (confirm("Remove this photo?")) { n.photos.splice(+b.dataset.ph, 1); save(); draw(); } });
+    app.querySelectorAll("[data-up]").forEach(b => b.onclick = () => { const i = +b.dataset.up; [n.photos[i - 1], n.photos[i]] = [n.photos[i], n.photos[i - 1]]; save(); draw(); });
+    app.querySelectorAll("[data-cap]").forEach(t => t.oninput = () => { n.photos[+t.dataset.cap].cap = t.value; save(); });
+    const addPhotos = async files => {
+      for (const f of files) {
+        const blob = await shrink(f, 1600);
+        const bmp = await createImageBitmap(blob), url = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+        n.photos.push({ url, w: bmp.width, h: bmp.height, cap: "" }); bmp.close && bmp.close();
+      }
       await save(); draw();
-    }));
+      const last = app.querySelector(`[data-cap="${n.photos.length - 1}"]`); if (last) { last.scrollIntoView({ block: "center" }); last.focus(); }
+    };
+    $("#rn_cam").onclick = () => pickFiles("#cam", addPhotos);
+    $("#rn_gal").onclick = () => pickFiles("#gallery", addPhotos);
     $("#rn_new").onclick = async () => {
       if (!confirm("Start a new day? The route, team and species are kept; the date, what3words, distance, notes and photos are cleared.")) return;
-      Object.assign(n, { date: today(), w3w: "", dist: "", obsExtra: "", conExtra: "", photos: [null, null, null] });
+      Object.assign(n, { date: today(), w3w: "", dist: "", obsExtra: "", conExtra: "", photos: [] });
       await save(); draw(); window.scrollTo(0, 0); toast("Ready for a new day");
     };
     $("#rn_pdf").onclick = async () => {
