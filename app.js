@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.28";
+const APP_VERSION = "1.29";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -1141,6 +1141,10 @@ async function settingsPage() {
     <p class="hint">Added to compass bearings to make them true. In the UK it's within a degree or two of zero – the BGS declination calculator gives today's figure. Leave 0 if your rangefinder is already set to true north.</p>
     <label for="uvf">CAVAT Unit Value Factor (£)</label><input id="uvf" inputmode="decimal" value="${esc(s.uvf || CAVAT.DEFAULT_UVF)}">
     <p class="hint">Check the current figure with the LTOA each year.</p>
+    <h2>Bats</h2>
+    <label for="batLicence">Natural England bat licence number (if you hold one)</label><input id="batLicence" value="${esc(s.batLicence || "")}">
+    <label class="check"><input type="checkbox" id="batEndoscope" ${s.batEndoscope ? "checked" : ""}> I've done the BCT endoscope training for arborists (Secondary Roost Surveys) and work to the BCT method statement</label>
+    <p class="hint">This sets what the bat checks let you do. With neither, they keep you on the ground. The training certificates recommend a refresher within 5 years.</p>
     <h2>Quick phrases</h2>
     <label class="check"><input type="checkbox" id="askDetails" ${s.askDetails !== false ? "checked" : ""}> Ask for position, size and direction when I tap an observation</label>
     <p class="hint">These are the tap-to-add buttons under each box. Change them to your own wording.</p>
@@ -1158,6 +1162,8 @@ async function settingsPage() {
     s.uvf = +$("#uvf").value.replace(",", ".") || CAVAT.DEFAULT_UVF;
     s.declination = +String($("#decl").value).replace(",", ".") || 0;
     s.qtraAssessors = $("#qtraAssessors").value.split("\n").map(x => x.trim()).filter(Boolean);
+    s.batLicence = $("#batLicence").value.trim();
+    s.batEndoscope = $("#batEndoscope").checked;
     for (const k of Object.keys(DEFAULT_PHRASES)) s.phrases[k] = $("#p_" + k).value.split("\n").map(x => x.trim()).filter(Boolean);
     await DB.put("settings", s); toast("Settings saved"); go("#/");
   };

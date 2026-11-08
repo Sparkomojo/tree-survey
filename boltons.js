@@ -71,14 +71,37 @@ const PRF_TYPES = ["Woodpecker hole", "Rot hole / cavity", "Hazard beam", "Tear-
   "Butt rot / basal cavity", "Compression fork / included bark", "Dense ivy (stems over 50 mm)", "Hollow stem / limb", "Other"];
 const BAT_ASPECTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 const PRF_METHOD = ["Ground / binoculars", "Torch / mirror", "Endoscope", "Ladder", "MEWP", "Climbing", "Drone / pole camera", "Not inspected"];
-const PRF_EVID = ["None found", "Bats seen", "Droppings", "Urine / grease staining", "Scratch marks", "Feeding remains", "Odour", "Flies", "Bird / other use", "Wet – unsuitable"];
-const BAT_RECS = ["No further survey", "Precautionary working method", "Aerial PRF inspection by a licensed ecologist", "Further survey by an ecologist (emergence / re-entry)", "Retain the feature", "Bat box as a precaution"];
+const PRF_EVID = ["None found", "Bats seen", "Dead bat", "Droppings", "Urine / grease staining", "Scratch marks", "Squeaking", "Feeding remains", "Odour", "Flies", "Bird / other use", "Wet – unsuitable"];
+const BAT_SIGNS = ["Bats seen", "Dead bat", "Droppings", "Urine / grease staining", "Scratch marks", "Squeaking", "Feeding remains", "Odour", "Flies"];
+const PRF_DRY = ["Dry", "Damp", "Wet"];
+const PRF_SEEN = ["All of it", "Not all – couldn't see the end", "Endoscope wouldn't go in"];
+const PRF_GRADES = [["Ruled out", "Ruled out (unsuitable, no signs)"], ["PRF-I", "PRF-I (individual bats)"], ["PRF-M", "PRF-M (multiple bats / maternity)"]];
+const BAT_RECS = ["No further survey", "Precautionary working method", "Re-check features immediately before work", "Soft-fell sections with features",
+  "Take extra care in winter (hibernation)", "Aerial PRF inspection by a licensed ecologist", "Further survey by an ecologist (emergence / re-entry)", "Retain the feature", "Bat box as a precaution"];
 function batGrade(b) {
   if (!b) return "";
   const g = (b.prfs || []).map(p => p.grade);
   if (g.includes("PRF-M")) return "PRF-M";
   if (g.includes("PRF-I")) return "PRF-I";
+  if (g.length && g.every(x => x === "Ruled out")) return "Ruled out";
   return b.glta || "";
+}
+const batSigns = p => (p.evidence || []).filter(x => BAT_SIGNS.includes(x));
+// BCT method statement for arborists (2015): an endoscope may only RULE OUT a feature – seen all the way, no signs of bats.
+const canRuleOut = p => !batSigns(p).length && p.seen === "All of it" && !!p.method && !["Ground / binoculars", "Not inspected"].includes(p.method);
+function batHint(s) {
+  if (s.batLicence) return `Bat licence ${esc(s.batLicence)}.`;
+  if (s.batEndoscope) return "<b>Endoscope checks (BCT method statement for arborists):</b> only to rule out a feature with no signs of bats, after the ground assessment – torch or mirror first. "
+    + "Not for a feature already showing signs, a dry cavity running upwards, or a veteran tree with many cavities: those go to a licensed ecologist. Keep the light low and never force it. "
+    + "Any sign of bats: withdraw at once, stop work and call a licensed ecologist.";
+  return "<b>No bat licence or endoscope training set (Settings):</b> inspect only from the ground or with a camera where bats won't be disturbed. If bats may be present, stop – a licensed ecologist inspects.";
+}
+function prfWarnings(p, s) {
+  const w = [], signs = batSigns(p);
+  if (signs.length) w.push(`<b>Signs of bats (${esc(signs.join(", "))}):</b> ${s.batLicence ? "treat it as a roost and follow your licence." : "withdraw, stop work on this tree and call a licensed ecologist – it can't be ruled out."}`);
+  if (p.method === "Endoscope" && !s.batLicence && !s.batEndoscope) w.push("Endoscope checks need a bat licence or BCT endoscope training – set it in Settings.");
+  if (p.seen && p.seen !== "All of it" && !s.batLicence) w.push("Not seen all the way: don't force it – it can't be ruled out, a licensed ecologist decides.");
+  return w.map(x => `<div class="hint warn">${x}</div>`).join("");
 }
 
 // ------------------------------------------------------------------ BNG (statutory biodiversity metric, individual trees)
@@ -183,7 +206,7 @@ function boltTreeBoxes(t, job, s) {
   if (bo.bat) {
     const b = t.bat || {};
     out.push(`<details class="more" id="batBox" ${t.bat ? "open" : ""}><summary>Bats – ground level tree assessment ${batGrade(b) ? `· <b>${esc(batGrade(b))}</b>` : ""}</summary>
-      <div class="hint">${s.batLicence ? `Bat licence ${esc(s.batLicence)}.` : "<b>No bat licence on this device:</b> inspect only from the ground or with a camera where bats won't be disturbed. If bats may be present, stop – a licensed ecologist inspects."}</div>
+      <div class="hint">${batHint(s)}</div>
       <label>Tree category (from the ground)</label>${chips("glta", BAT_GLTA, b.glta)}
       <label>Access for the assessment</label>${chips("access", ["All aspects", "Partial", "Poor"], b.access)}
       <div id="prfList"></div><button class="btn small" id="addPrf">＋ Potential roost feature</button>
@@ -220,6 +243,7 @@ function bindBoltTree(t, job, touch) {
   const bb = document.getElementById("batBox");
   if (bb) {
     const b = () => (t.bat = t.bat || { prfs: [] });
+    const prfFlag = () => { if (!t.batPrfManual && (b().prfs || []).length) t.batPrf = batGrade(b()) === "Ruled out" ? "No" : "Yes"; };
     const drawPrfs = () => {
       const el = document.getElementById("prfList"), list = b().prfs || (b().prfs = []);
       el.innerHTML = list.map((p, i) => `<div class="card prf" data-i="${i}"><div class="row"><b>PRF ${i + 1}</b><span class="pill">${esc(p.grade || "not graded")}</span><button class="btn small danger" data-del>✕</button></div>
@@ -229,14 +253,38 @@ function bindBoltTree(t, job, touch) {
           <div><label>Entrance (cm)</label><input data-k="entrance" inputmode="decimal" value="${esc(p.entrance || "")}"></div></div>
         <div class="grid2"><div><label>Extends</label><select data-k="extent"><option></option>${["Upwards", "Downwards", "Both", "Shallow / none"].map(x => `<option ${p.extent === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
           <div><label>Inspected with</label><select data-k="method">${["", ...PRF_METHOD].map(x => `<option ${p.method === x ? "selected" : ""}>${x}</option>`).join("")}</select></div></div>
+        <div class="grid2"><div><label>Dry?</label><select data-k="dry"><option></option>${PRF_DRY.map(x => `<option ${p.dry === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+          <div><label>Checked on</label><input type="date" data-k="checked" value="${esc(p.checked || "")}"></div></div>
+        <label>Seen all of it?</label><select data-k="seen"><option></option>${PRF_SEEN.map(x => `<option ${p.seen === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
         <label>Evidence</label><div class="chips" data-ev>${PRF_EVID.map(x => `<button class="chip small ${(p.evidence || []).includes(x) ? "on" : ""}" data-v="${esc(x)}">${esc(x)}</button>`).join("")}</div>
-        <label>Suitability</label><div class="chips" data-gr>${["PRF-I", "PRF-M"].map(x => `<button class="chip small ${p.grade === x ? "on" : ""}" data-v="${x}">${x === "PRF-I" ? "PRF-I (individual bats)" : "PRF-M (multiple bats / maternity)"}</button>`).join("")}</div>
+        <div data-warn>${prfWarnings(p, s)}</div>
+        <label>Outcome</label><div class="chips" data-gr>${PRF_GRADES.map(([x, l]) => `<button class="chip small ${p.grade === x ? "on" : ""}" data-v="${x}">${l}</button>`).join("")}</div>
       </div>`).join("");
       el.querySelectorAll(".prf").forEach(card => {
         const p = list[+card.dataset.i];
-        card.querySelectorAll("[data-k]").forEach(i => i.oninput = i.onchange = () => { p[i.dataset.k] = i.value; touch(); });
-        card.querySelector("[data-ev]").onclick = e => { const c = e.target.closest(".chip"); if (!c) return; e.preventDefault(); const st = new Set(p.evidence || []); st.has(c.dataset.v) ? st.delete(c.dataset.v) : st.add(c.dataset.v); p.evidence = [...st]; c.classList.toggle("on"); touch(); };
-        card.querySelector("[data-gr]").onclick = e => { const c = e.target.closest(".chip"); if (!c) return; e.preventDefault(); p.grade = p.grade === c.dataset.v ? "" : c.dataset.v; touch(); drawPrfs(); };
+        const recheck = () => {
+          card.querySelector("[data-warn]").innerHTML = prfWarnings(p, s);
+          if (p.grade === "Ruled out" && !canRuleOut(p)) { p.grade = ""; touch(); prfFlag(); drawPrfs(); }
+        };
+        card.querySelectorAll("[data-k]").forEach(i => i.oninput = i.onchange = () => {
+          p[i.dataset.k] = i.value;
+          if (i.dataset.k === "method" && i.value === "Endoscope" && !p.checked) { p.checked = new Date().toISOString().slice(0, 10); card.querySelector('[data-k="checked"]').value = p.checked; }
+          touch(); recheck();
+        });
+        card.querySelector("[data-ev]").onclick = e => {
+          const c = e.target.closest(".chip"); if (!c) return; e.preventDefault();
+          const v = c.dataset.v, st = new Set(p.evidence || []);
+          if (st.has(v)) st.delete(v);
+          else { st.add(v); if (v === "None found") BAT_SIGNS.forEach(x => st.delete(x)); else if (BAT_SIGNS.includes(v)) st.delete("None found"); }
+          p.evidence = [...st];
+          card.querySelectorAll("[data-ev] .chip").forEach(x => x.classList.toggle("on", st.has(x.dataset.v)));
+          touch(); recheck();
+        };
+        card.querySelector("[data-gr]").onclick = e => {
+          const c = e.target.closest(".chip"); if (!c) return; e.preventDefault();
+          if (c.dataset.v === "Ruled out" && p.grade !== "Ruled out" && !canRuleOut(p)) { toast("Only a feature checked close up, seen all the way, with no signs of bats can be ruled out", 4500); return; }
+          p.grade = p.grade === c.dataset.v ? "" : c.dataset.v; touch(); prfFlag(); drawPrfs();
+        };
         card.querySelector("[data-del]").onclick = e => { e.preventDefault(); if (confirm("Remove this feature?")) { list.splice(+card.dataset.i, 1); touch(); drawPrfs(); } };
       });
     };
