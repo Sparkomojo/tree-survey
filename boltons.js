@@ -297,7 +297,7 @@ function boltDetails(job, s) {
     const bs = el.querySelector('[data-bone="bngSetting"]');
     if (bs) bs.onclick = e => { const b = e.target.closest(".chip"); if (!b) return; e.preventDefault(); job.bngSetting = b.dataset.v; bs.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); };
     const ha = document.getElementById("siteHa");
-    if (ha) { const note = () => { const v = parseFloat(ha.value); document.getElementById("haNote").textContent = v > 0 && v <= 0.2 ? "0.2 ha or less: probably exempt from mandatory BNG since 6 August 2026 – check with the planning authority." : ""; }; ha.oninput = () => { job.siteHa = ha.value.trim(); note(); }; note(); }
+    if (ha) { const note = () => { const v = parseFloat(ha.value); document.getElementById("haNote").textContent = v > 0 && v <= 0.2 ? "0.2 ha or less: probably exempt from mandatory BNG – but only for planning applications made on or after 6 August 2026, and not if the development would harm priority habitat on the site. Check with the planning authority." : ""; }; ha.oninput = () => { job.siteHa = ha.value.trim(); note(); }; note(); }
   };
   draw();
 }
