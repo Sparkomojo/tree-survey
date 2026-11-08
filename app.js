@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.27";
+const APP_VERSION = "1.28";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -45,6 +45,10 @@ const DEFAULT_PHRASES = {
 };
 const LIFE = ["Y", "SM", "EM", "M", "OM", "V"], COND = ["Good", "Fair", "Poor", "Dead"], STRUCT = ["Good", "Fair", "Poor"];
 const RISK_METHODS = ["VALID", "QTRA", "THREATS", "CAVAT"];
+// land ownership; linear routes (road, railway, footpath): which side / direction each tree is on, in the direction of travel
+const OWNERSHIP = ["Client", "Third party", "Not known"];
+const routeDirs = job => { const r = job.route || {}; const a = r.from || "start", b = r.to || "end";
+  return [r.dir1 || `${a} to ${b}`, r.dir2 || `${b} to ${a}`, "Central reserve"]; };
 const riskMethods = job => job.riskMethods || (roadside(job) ? ["VALID"] : ["VALID", "QTRA"]);
 // QTRA only for a surveyor on the registered-assessor list in Settings
 const qtraAllowed = (s, job) => (s.qtraAssessors || []).some(a => {
@@ -297,6 +301,14 @@ async function detailsPage(id) {
     <div id="fmtwrap" hidden><label>Report format (Scottish Woodlands)</label>
       <div class="chips" id="format">${[["Roadside/PROW", "Roadside / PROW"], ["Parkland", "Parkland (AMR)"]].map(([v, l]) => `<button class="chip ${job.format === v ? "on" : ""}" data-v="${v}">${l}</button>`).join("")}</div></div>
     <label class="check" id="bandswrap"><input type="checkbox" id="bands" ${job.bands ? "checked" : ""}> Record height, DBH and spread in bands (e.g. 6 - 10 m)</label>
+    <label class="check"><input type="checkbox" id="routeOn" ${job.route ? "checked" : ""}> Linear route (road, railway or footpath) – record each tree's direction / side and marker post, for reports in the direction of travel</label>
+    <div id="routeWrap" ${job.route ? "" : "hidden"}>
+      <div class="grid2"><div><label for="rFrom">Route from</label><input id="rFrom" value="${esc((job.route || {}).from || "")}" placeholder="e.g. A1(M) J63"></div>
+        <div><label for="rTo">to</label><input id="rTo" value="${esc((job.route || {}).to || "")}" placeholder="e.g. A1(M) J65"></div></div>
+      <div class="grid2"><div><label for="rDir1">Direction 1 name (optional)</label><input id="rDir1" value="${esc((job.route || {}).dir1 || "")}" placeholder="e.g. Northbound"></div>
+        <div><label for="rDir2">Direction 2 name (optional)</label><input id="rDir2" value="${esc((job.route || {}).dir2 || "")}" placeholder="e.g. Southbound"></div></div>
+      <div class="hint">Direction 1 runs from the start to the end of the route and is reported first. A tree's direction is the carriageway (or side) it stands beside.</div>
+    </div>
     <label class="check"><input type="checkbox" id="trial" ${job.trial ? "checked" : ""}> Drone method trial – record the method, a drone flag (red / amber / green), the time and the time beside live traffic for each tree</label>
     <label>Risk / valuation methods on this survey</label>
     <div class="chips" id="riskMethods">${RISK_METHODS.map(m => `<button class="chip ${riskMethods(job).includes(m) ? "on" : ""}" data-v="${m}">${m}</button>`).join("")}</div>
@@ -338,6 +350,7 @@ async function detailsPage(id) {
   $("#format").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; job.format = b.dataset.v; if (job.format === "Roadside/PROW") { job.bands = true; $("#bands").checked = true; } showFmt(); };
   $("#bands").onchange = e => { job.bands = e.target.checked; };
   $("#trial").onchange = e => { job.trial = e.target.checked; };
+  $("#routeOn").onchange = e => { $("#routeWrap").hidden = !e.target.checked; };
   $("#riskMethods").onclick = e => {
     const b = e.target.closest(".chip"); if (!b) return;
     const cur = new Set(riskMethods(job)); cur.has(b.dataset.v) ? cur.delete(b.dataset.v) : cur.add(b.dataset.v);
@@ -365,6 +378,7 @@ async function detailsPage(id) {
     for (const f of ["client", "site", "address", "surveyDate", "consultant", "firstTag", "weather", "siteDescription", "notes"]) job[f] = $("#" + f).value.trim();
     job.cavatLA = $("#cavatLA").value.trim();
     job.highwayAuthority = $("#hwyLA").value.trim();
+    job.route = $("#routeOn").checked ? { from: $("#rFrom").value.trim(), to: $("#rTo").value.trim(), dir1: $("#rDir1").value.trim(), dir2: $("#rDir2").value.trim() } : null;
     if (!SW.test(job.client) || job.type === "BS5837") job.format = "";
     if (!job.site) { toast("Enter a site name"); $("#site").focus(); return; }
     job.updated = Date.now();
@@ -536,6 +550,11 @@ async function treePage(jobId, treeId) {
       <div class="hint" id="laserStat"></div>
     </details>
     <div class="grid2">${f("w3w", "what3words (optional)", 'placeholder="///word.word.word" autocapitalize="none" autocomplete="off"')}${f("gridManual", "Grid ref override", 'placeholder="NZ 15862 57871" autocapitalize="characters"')}</div>
+    ${job.route ? `<label>Direction / side of the route</label>${pick("direction", routeDirs(job))}
+      <div class="grid2">${f("markerPost", "Marker post / chainage", 'placeholder="e.g. 123/4" autocomplete="off"')}<div></div></div>` : ""}
+    ${job.type === "AMR" || bs ? `<label>Land ownership</label>${pick("ownership", OWNERSHIP)}
+      <div id="ownWrap" ${t.ownership === "Third party" ? "" : "hidden"}>${f("landowner", "Landowner / property (if known)", 'placeholder="e.g. Mill Farm, or 12 Station Road" autocomplete="off"')}
+        <div class="hint">Trees on third-party land get a letter to the owner (Third-party trees on the PC). Name the property or owner if you can – trees with the same name share a letter.</div></div>` : ""}
     <details class="more" id="lineBox" ${t.end || /^(G|H|TG|W)/i.test(t.tag || "") ? "open" : ""}><summary>Hedge / group as a line (start and end)</summary>
       <div class="hint">The location above is the <b>start</b>. Walk to the other end and record the <b>end</b>; add a bend wherever it changes direction. The plan draws it as a band its crown-spread wide.</div>
       <div class="card"><div class="status"><div class="big" id="endRef">${t.end ? esc(OSGB.fromLatLon(+t.end.lat, +t.end.lon).ref) : "No end yet"}</div>
@@ -773,6 +792,7 @@ async function treePage(jobId, treeId) {
     const k = g.dataset.pick, v = b.dataset.v;
     t[k] = t[k] === v ? "" : v;
     g.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.v === t[k]));
+    if (k === "ownership" && $("#ownWrap")) $("#ownWrap").hidden = t.ownership !== "Third party";
     touch();
   });
   bindAppendChips();
@@ -1212,8 +1232,13 @@ async function buildZip(jobId) {
   const withZone = !bs && trees.some(t => t.zone);
   const withVet = !bs && trees.some(t => vetSummary(t.vet));
   const withLine = !bs && trees.some(t => t.end && t.end.lat != null);
-  const head = bs ? BS_HEAD : AMR_HEAD.map(h => h === "Crown Spread (m)" ? crownHead(job) : h).concat(withRisk ? RISK_HEAD : [], withCavat ? ["CAVAT (£)"] : [], withChange ? ["Change Since Last Survey"] : [], withZone ? ["Zone"] : [], withVet ? ["Veteran Features"] : [], withLine ? ["End Grid Ref", "End Latitude", "End Longitude"] : []);
-  const ws = XLSX.utils.aoa_to_sheet([head, ...trees.map(t => treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, withLine))]);
+  const withRoute = !!job.route || trees.some(t => t.direction || t.markerPost);
+  const withOwn = trees.some(t => t.ownership || t.landowner);
+  const extraHead = (withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
+  const extra = t => (withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [t.ownership || "", t.landowner || ""] : []);
+  const head0 = bs ? BS_HEAD : AMR_HEAD.map(h => h === "Crown Spread (m)" ? crownHead(job) : h).concat(withRisk ? RISK_HEAD : [], withCavat ? ["CAVAT (£)"] : [], withChange ? ["Change Since Last Survey"] : [], withZone ? ["Zone"] : [], withVet ? ["Veteran Features"] : [], withLine ? ["End Grid Ref", "End Latitude", "End Longitude"] : []);
+  const head = head0.concat(extraHead);
+  const ws = XLSX.utils.aoa_to_sheet([head, ...trees.map(t => treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, withLine).concat(extra(t)))]);
   ws["!cols"] = head.map(h => ({ wch: /Comments|Recommend|Notes/.test(h) ? 50 : /Species|Grid/.test(h) ? 30 : Math.max(8, h.length + 2) }));
   ws["!freeze"] = { xSplit: 0, ySplit: 1 };
   const wb = XLSX.utils.book_new();
