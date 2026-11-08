@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.29";
+const APP_VERSION = "1.30";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -296,7 +296,7 @@ async function detailsPage(id) {
   <header class="top"><button aria-label="Back" onclick="history.back()">‹</button><h1>${id ? "Site details" : "New site survey"}</h1></header>
   <main>
     <label>Survey type</label>
-    <div class="chips" id="type">${[["AMR", "AMR (management report)"], ["BS5837", "BS5837 (AIA / AMS)"], ["NEST", "Nesting bird check"], ["PROPERTY", "Property (mortgage / subsidence)"]].map(([t, l]) => `<button class="chip ${job.type === t ? "on" : ""}" data-v="${t}">${l}</button>`).join("")}</div>
+    <div class="chips" id="type">${[["AMR", "AMR (management report)"], ["BS5837", "BS5837 (AIA / AMS)"], ["NEST", "Nesting bird check"], ["PROPERTY", "Property (mortgage / subsidence)"], ["ESTAB", "Young tree establishment check"]].map(([t, l]) => `<button class="chip ${job.type === t ? "on" : ""}" data-v="${t}">${l}</button>`).join("")}</div>
     <label for="client">Client</label><input id="client" value="${esc(job.client)}" autocomplete="organization" placeholder="e.g. Patchwork Project">
     <div id="fmtwrap" hidden><label>Report format (Scottish Woodlands)</label>
       <div class="chips" id="format">${[["Roadside/PROW", "Roadside / PROW"], ["Parkland", "Parkland (AMR)"]].map(([v, l]) => `<button class="chip ${job.format === v ? "on" : ""}" data-v="${v}">${l}</button>`).join("")}</div></div>
@@ -341,7 +341,7 @@ async function detailsPage(id) {
     $("#fmtwrap").hidden = !sw;
     $("#bandswrap").hidden = job.type === "BS5837";
     $("#crownwrap").hidden = job.type === "BS5837" || job.type === "NEST";  // BS 5837 always uses the four cardinal radii
-    $("#riskMethods").hidden = job.type === "NEST" || job.type === "PROPERTY";
+    $("#riskMethods").hidden = ["NEST", "PROPERTY", "ESTAB"].includes(job.type);
     if (job.type === "NEST") $("#bandswrap").hidden = true;
     if (sw && !job.format) { job.format = "Roadside/PROW"; job.bands = true; $("#bands").checked = true; }
     $("#format").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.v === job.format));

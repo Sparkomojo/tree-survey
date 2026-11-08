@@ -6,13 +6,15 @@
    - Bats: ground level tree assessment and potential roost features (BCT Good Practice Guidelines, 4th ed., 2023 categories).
    - BNG: individual tree baseline for the statutory biodiversity metric (size class, condition criteria A–F).
    - Property: distance to the building, ownership, water demand and zone of influence (mortgage / subsidence reports).
+   - Young trees: establishment checks of new planting (BS 8545:2014+A1:2026) – condition, stakes and ties, watering, mulch,
+     damage, aftercare actions, and the rooting volume of the pit against a rule-of-thumb target.
    - Lone working check-in / check-out by text message.
    Nests and ecology features live in the "features" store; bat / BNG / property data on each tree (t.bat, t.bng, t.prop). */
 "use strict";
 
-const BOLT_LIST = [["nest", "🐦 Nesting birds"], ["bat", "🦇 Bats (tree roosts)"], ["eco", "🦡 Ecology"], ["bng", "🌿 BNG tree baseline"]];
-const bolts = job => Object.assign({}, job.bolts || {}, job.type === "NEST" ? { nest: true } : {});
-const TYPE_LABEL = { AMR: "AMR", BS5837: "BS5837", NEST: "Nesting birds", PROPERTY: "Property", WORKS: "Works order", QUOTE: "Quote visit" };
+const BOLT_LIST = [["nest", "🐦 Nesting birds"], ["bat", "🦇 Bats (tree roosts)"], ["eco", "🦡 Ecology"], ["bng", "🌿 BNG tree baseline"], ["estab", "🌱 Young trees (establishment)"]];
+const bolts = job => Object.assign({}, job.bolts || {}, job.type === "NEST" ? { nest: true } : {}, job.type === "ESTAB" ? { estab: true } : {});
+const TYPE_LABEL = { AMR: "AMR", BS5837: "BS5837", NEST: "Nesting birds", PROPERTY: "Property", ESTAB: "Young trees", WORKS: "Works order", QUOTE: "Quote visit" };
 
 // ------------------------------------------------------------------ birds
 // Birds of Conservation Concern 5 (2021): R / A / G ("" = not assessed or check); S1 = Schedule 1, WCA 1981.
@@ -103,6 +105,45 @@ function prfWarnings(p, s) {
   if (p.seen && p.seen !== "All of it" && !s.batLicence) w.push("Not seen all the way: don't force it – it can't be ruled out, a licensed ecologist decides.");
   return w.map(x => `<div class="hint warn">${x}</div>`).join("");
 }
+
+// ------------------------------------------------------------------ young trees: establishment checks (BS 8545:2014+A1:2026)
+const EST_ROOT = ["Bare root", "Root-balled", "Container / air-pot"];
+const EST_COND = ["Good", "Fair", "Poor", "Dead", "Missing"];
+const EST_LEADER = ["Single, good", "Damaged", "Competing leaders"];
+const EST_DAMAGE = ["Vandalism", "Mower / strimmer", "Vehicle", "Deer / rabbit / squirrel", "Drought stress", "Frost", "Wind-rock", "Tie cutting into stem", "Circling roots"];
+const EST_SUPPORT = ["None", "Single stake", "Two stakes", "Three stakes", "Underground guying", "Above-ground guying"];
+const EST_SUPPORT_STATE = ["OK", "Tie too tight", "Tie rubbing", "Loose / rocking", "Stake broken", "No longer needed"];
+const EST_GUARD = ["None", "Spiral / tube", "Mesh", "Metal guard", "Shelter"];
+const EST_WATER = ["Irrigation pipe", "Watering bag", "None"];
+const EST_SOIL = ["Dry", "Moist", "Wet", "Waterlogged"];
+const EST_MULCH = ["Good", "Thin", "None", "Piled against stem"];
+const EST_BASE = ["Clear", "Some weeds / grass", "Heavy competition"];
+const EST_PIT = ["Open ground", "Pit in hard surface", "Soil cells", "Structural soil", "Linked trench", "Raised planter"];
+const EST_ACTIONS = ["Water", "Loosen / adjust tie", "Remove stake and tie", "Re-firm", "Mulch", "Pull mulch back from stem", "Weed / clear base",
+  "Formative prune", "Fix / replace guard", "Remove dead tree", "Replace next planting season"];
+function estSuggest(e) {
+  const a = new Set();
+  if (["Dead", "Missing"].includes(e.cond)) { if (e.cond === "Dead") a.add("Remove dead tree"); a.add("Replace next planting season"); return [...a]; }
+  if (e.soil === "Dry") a.add("Water");
+  if (["Tie too tight", "Tie rubbing"].includes(e.supportState) || (e.damage || []).includes("Tie cutting into stem")) a.add("Loosen / adjust tie");
+  if (e.supportState === "Loose / rocking") a.add("Re-firm");
+  if (e.supportState === "No longer needed") a.add("Remove stake and tie");
+  if (e.supportState === "Stake broken") a.add("Loosen / adjust tie");
+  if (["Thin", "None"].includes(e.mulch)) a.add("Mulch");
+  if (e.mulch === "Piled against stem") a.add("Pull mulch back from stem");
+  if (e.base && e.base !== "Clear") a.add("Weed / clear base");
+  if (e.leader === "Competing leaders") a.add("Formative prune");
+  if ((e.damage || []).some(d => ["Deer / rabbit / squirrel", "Mower / strimmer", "Vandalism"].includes(d))) a.add("Fix / replace guard");
+  return [...a];
+}
+// rooting volume: the pit's volume against a rule of thumb used by tree pit suppliers (design crown area × 0.6 m of uncompacted soil)
+const estNum = v => { const n = parseFloat(String(v ?? "").replace(",", ".")); return isFinite(n) && n > 0 ? n : null; };
+function estVolume(e) {
+  if (estNum(e.vol)) return estNum(e.vol);
+  const l = estNum(e.pitL), w = estNum(e.pitW), d = estNum(e.pitD);
+  return l && w && d ? l * w * d : null;
+}
+function estTarget(e) { const c = estNum(e.crown); return c ? Math.PI * (c / 2) ** 2 * 0.6 : null; }
 
 // ------------------------------------------------------------------ BNG (statutory biodiversity metric, individual trees)
 const NATIVE_TREES = ["Acer campestre", "Alnus glutinosa", "Arbutus unedo", "Betula pendula", "Betula pubescens", "Buxus sempervirens", "Carpinus betulus", "Cornus sanguinea",
@@ -226,6 +267,36 @@ function boltTreeBoxes(t, job, s) {
       <div class="grid2"><div><label for="g_count">Number of trees (urban groups)</label><input id="g_count" data-bin="count" inputmode="numeric" value="${esc(g.count ?? 1)}"></div><div></div></div>
     </details>`);
   }
+  if (bo.estab) {
+    const e = t.estab || {};
+    out.push(`<details class="more" id="estBox" ${t.estab || job.type === "ESTAB" ? "open" : ""}><summary>Young tree – establishment ${e.cond ? `· <b>${esc(e.cond)}</b>` : ""}</summary>
+      <div class="grid2"><div><label for="e_planted">Planted (date or season)</label><input id="e_planted" data-bin="planted" placeholder="e.g. winter 2025–26" value="${esc(e.planted || "")}"></div>
+        <div><label for="e_stock">Nursery size</label><input id="e_stock" data-bin="stock" placeholder="e.g. 12–14 cm girth" value="${esc(e.stock || "")}"></div></div>
+      <label>Root type</label>${chips("root", EST_ROOT, e.root)}
+      <label>Condition</label>${chips("cond", EST_COND, e.cond)}
+      <label>Leader</label>${chips("leader", EST_LEADER, e.leader)}
+      <label>Damage</label>${chips("damage", EST_DAMAGE, e.damage, true)}
+      <label>Support</label>${chips("support", EST_SUPPORT, e.support)}
+      <label>Stake and tie</label>${chips("supportState", EST_SUPPORT_STATE, e.supportState)}
+      <label>Guard</label>${chips("guard", EST_GUARD, e.guard)}
+      <label>Watering</label>${chips("water", EST_WATER, e.water)}
+      <label>Soil at the root ball</label>${chips("soil", EST_SOIL, e.soil)}
+      <label>Mulch</label>${chips("mulch", EST_MULCH, e.mulch)}
+      <label>Base of the tree</label>${chips("base", EST_BASE, e.base)}
+      <details class="more"><summary>Tree pit – rooting volume</summary>
+        <label>Pit / system</label>${chips("pit", EST_PIT, e.pit)}
+        <div class="grid3"><div><label>Length (m)</label><input data-bin="pitL" inputmode="decimal" value="${esc(e.pitL || "")}"></div>
+          <div><label>Width (m)</label><input data-bin="pitW" inputmode="decimal" value="${esc(e.pitW || "")}"></div>
+          <div><label>Depth (m)</label><input data-bin="pitD" inputmode="decimal" value="${esc(e.pitD || "")}"></div></div>
+        <div class="grid2"><div><label>…or volume (m³)</label><input data-bin="vol" inputmode="decimal" placeholder="soil cells, trench" value="${esc(e.vol || "")}"></div>
+          <div><label>Design crown spread (m)</label><input data-bin="crown" inputmode="decimal" placeholder="mature / 25 yrs" value="${esc(e.crown || "")}"></div></div>
+        <div class="roh" id="estOut"></div>
+      </details>
+      <label>Actions</label>${chips("actions", EST_ACTIONS, e.actions, true)}
+      <div class="hint" id="estHint"></div>
+      <label for="e_notes">Notes</label><textarea id="e_notes" data-bin="notes" rows="2">${esc(e.notes || "")}</textarea>
+    </details>`);
+  }
   return out.join("");
 }
 
@@ -294,6 +365,26 @@ function bindBoltTree(t, job, touch) {
     document.getElementById("addPrf").onclick = e => { e.preventDefault(); (b().prfs = b().prfs || []).push({ evidence: [] }); if (!b().glta) b().glta = "PRF"; t.batPrf = "Yes"; touch(); drawPrfs(); };
     drawPrfs();
   }
+  const eb = document.getElementById("estBox");
+  if (eb) {
+    const e = () => (t.estab = t.estab || { auto: true });
+    const show = () => {
+      const x = t.estab || {}, v = estVolume(x), tg = estTarget(x), o = document.getElementById("estOut");
+      if (o) o.innerHTML = v && tg ? `Rooting volume ${v.toFixed(1)} m³ · rule-of-thumb target ${tg.toFixed(1)} m³ (crown area × 0.6 m) → <b class="${v >= tg ? "ok" : "no"}">${v >= tg ? "enough" : `short by ${(tg - v).toFixed(1)} m³`}</b>`
+        : "Enter the pit size (or its volume) and the crown spread the tree is designed to reach to compare the rooting volume with a rule-of-thumb target.";
+      const h = document.getElementById("estHint");
+      if (h) h.textContent = x.auto !== false ? "Actions are suggested from what you've recorded – tap to change them." : "";
+    };
+    bindSub(eb, e, touch, k => {
+      if (k === "actions") e().auto = false;
+      else if (e().auto !== false) {
+        e().actions = estSuggest(e());
+        eb.querySelectorAll('[data-bmany="actions"] .chip').forEach(c => c.classList.toggle("on", e().actions.includes(c.dataset.v)));
+      }
+      show();
+    });
+    show();
+  }
   const gb = document.getElementById("bngBox");
   if (gb) {
     const g = () => { if (!t.bng) t.bng = bngSuggest(t, job); return t.bng; };
@@ -335,11 +426,18 @@ function boltDetails(job, s) {
         <label for="pr_damage">Damage seen (cracks: where, width, direction)</label><textarea id="pr_damage" data-bin="damage" rows="2">${esc(pr.damage || "")}</textarea>
         ${pr.purpose === "Subsidence" ? `<label>Damage category (BRE Digest 251)</label>${chips("bre", ["0", "1", "2", "3", "4", "5"], pr.bre)}` : ""}
       </div>` : ""}
-      ${job.type !== "NEST" ? `<label>Bolt-ons for this survey</label><div class="chips" id="boltChips">${BOLT_LIST.map(([k, l]) => `<button class="chip ${bo[k] ? "on" : ""}" data-v="${k}">${l}</button>`).join("")}</div>` : ""}
+      ${!["NEST", "ESTAB"].includes(job.type) ? `<label>Bolt-ons for this survey</label><div class="chips" id="boltChips">${BOLT_LIST.map(([k, l]) => `<button class="chip ${bo[k] ? "on" : ""}" data-v="${k}">${l}</button>`).join("")}</div>` : ""}
+      ${bolts(job).estab ? `<div class="card" id="estcard"><h3 class="subhead">Young trees – establishment check</h3>
+        <label>Why the trees are being checked</label>${chips("reason", ["Planning condition", "BNG monitoring", "Landscape contract", "Client's own planting"], (job.estab || {}).reason, false, false)}
+        <div class="grid2"><div><label for="es_ref">Reference (condition no., contract…)</label><input id="es_ref" data-bin="ref" value="${esc((job.estab || {}).ref || "")}"></div>
+          <div><label for="es_period">Aftercare period (years)</label><input id="es_period" data-bin="period" inputmode="numeric" value="${esc((job.estab || {}).period || "")}"></div></div>
+        <label for="es_visit">This visit</label><input id="es_visit" data-bin="visit" placeholder="e.g. year 2, spring check" value="${esc((job.estab || {}).visit || "")}">
+      </div>` : ""}
       ${bo.bng ? `<div class="card"><h3 class="subhead">BNG</h3><label>Trees are mostly</label>${chips("bngSetting", ["Urban", "Rural"], job.bngSetting || "Urban")}
         <div class="grid2"><div><label for="siteHa">Site area (ha)</label><input id="siteHa" inputmode="decimal" value="${esc(job.siteHa || "")}"></div><div></div></div>
         <div class="hint" id="haNote"></div></div>` : ""}`;
     bindSub(document.getElementById("propcard"), () => pr, () => { }, k => { if (k === "purpose") draw(); });
+    bindSub(document.getElementById("estcard"), () => (job.estab = job.estab || {}), () => { });
     const bc = document.getElementById("boltChips");
     if (bc) bc.onclick = e => { const b = e.target.closest(".chip"); if (!b) return; e.preventDefault(); bo[b.dataset.v] = !bo[b.dataset.v]; draw(); };
     const bs = el.querySelector('[data-bone="bngSetting"]');
