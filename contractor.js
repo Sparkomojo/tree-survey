@@ -5,13 +5,15 @@
    On site the contractor reads and signs the RAMS, signs in and out (a text or WhatsApp to whoever issued the
    works), does the site safety check, marks each item done / part done / not done with before and after photos,
    signs off and sends the return zip back. The PC turns the return into a work completion report.
+   Part-way through, "Send a progress update" sends the same zip marked as progress (with or without the photos so
+   far): the PC files it and updates the works tracker for the contract manager, but makes no completion report.
    Stored as a job of type "WORKS": job.pack (the order), job.wk (progress), job.safety (site checks);
    documents and photos live in the photos store (role "doc", "wbefore", "wafter", "wextra"). */
 "use strict";
 
-const W_STATUS = [["", "Not started"], ["done", "Done"], ["part", "Part done"], ["notdone", "Not done"]];
+const W_STATUS = [["", "Not started"], ["started", "In progress"], ["done", "Done"], ["part", "Part done"], ["notdone", "Not done"]];
 const W_STATUS_TEXT = Object.fromEntries(W_STATUS);
-const W_COL = { done: "#2F8A3B", part: "#E8A200", notdone: "#C8102E", "": "#E07000" };
+const W_COL = { done: "#2F8A3B", part: "#E8A200", notdone: "#C8102E", started: "#1F6FB2", "": "#E07000" };
 const ZONE_COL = { nest: "#C8102E", eco: "#7A1FA2", invasive: "#1F6FB2" };
 const W_ROLES = ["Supervisor", "Climber", "Groundworker", "Chipper operator", "Stump grinder", "Banksman / traffic", "Other"];
 const ARISINGS = ["Chipped and left on site", "Chips removed from site", "Logs stacked on site", "All removed from site", "As instructed"];
@@ -29,11 +31,12 @@ const t5 = d => new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minut
 const dt5 = d => new Date(d).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" });
 const isoFromUk = s => { const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(s || "").trim()); return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : ""; };
 function wCounts(job) {
-  const c = { done: 0, part: 0, notdone: 0, "": 0 };
+  const c = { done: 0, part: 0, notdone: 0, started: 0, "": 0 };
   for (const it of wItems(job)) c[wState(job, it.id).status || ""]++;
   return c;
 }
 const contactName = job => (job.pack && job.pack.contact && job.pack.contact.name) || "the office";
+const wSummary = c => `${c.done} done${c.started ? `, ${c.started} in progress` : ""}${c.part ? `, ${c.part} part done` : ""}${c.notdone ? `, ${c.notdone} not done` : ""}`;
 
 function sendTo(contact, text) {
   const ph = contact && contact.phone;
@@ -97,7 +100,7 @@ function worksCard(j) {
   return `<a class="card job" href="#/job/${j.id}">
     <h3>${esc(j.site || "Works")}</h3>
     <div class="meta"><span class="badge works">Works</span> ${esc(p.ref || "")} · ${esc([p.start, p.finish].filter(Boolean).join(" – "))} · ${c.done}/${n} done</div>
-    <div class="meta">${onSite(j) ? "<b>On site</b> · " : ""}${j.exported ? `Return sent ${dt5(j.exported)}${j.updated > j.exported ? " · <b class='no'>changed since</b>" : ""}` : "<b class='no'>Return not sent yet</b>"}</div>
+    <div class="meta">${onSite(j) ? "<b>On site</b> · " : ""}${j.exported ? `Return sent ${dt5(j.exported)}${j.updated > j.exported ? " · <b class='no'>changed since</b>" : ""}` : `${j.progressSent ? `Progress sent ${dt5(j.progressSent)} · ` : ""}<b class='no'>Return not sent yet</b>`}</div>
   </a>`;
 }
 
@@ -132,7 +135,7 @@ async function worksJobPage(job) {
              : `<button class="btn primary block" id="win">📍 Sign in – arrived on site</button>`}
       <button class="btn block ${safe ? (safe.proceed ? "" : "warnbtn") : here ? "warnbtn" : ""}" onclick="go('#/job/${job.id}/safety')">✓ Site safety check ${safe ? (safe.proceed ? `– done ${t5(safe.when)}` : "– NOT safe") : "– not done today"}</button>
     </div>
-    <h3 class="subhead">Works – ${c.done} of ${n} done${c.part ? `, ${c.part} part done` : ""}${c.notdone ? `, ${c.notdone} not done` : ""}</h3>
+    <h3 class="subhead">Works – ${c.done} of ${n} done${c.started ? `, ${c.started} in progress` : ""}${c.part ? `, ${c.part} part done` : ""}${c.notdone ? `, ${c.notdone} not done` : ""}</h3>
     ${wItems(job).map(it => { const s = wState(job, it.id); return `
       <a class="card job witem" href="#/job/${job.id}/witem/${encodeURIComponent(it.id)}">
         <h3><span class="wdot" style="background:${W_COL[s.status || ""]}"></span>${esc(it.item || it.id)} · ${esc(it.tree)} ${esc(common(it.species))}</h3>
@@ -142,15 +145,17 @@ async function worksJobPage(job) {
     <div class="stack" style="margin-top:10px">
       <button class="btn block" onclick="go('#/job/${job.id}/wmap')">🗺 Map – works and keep-out zones${(p.zones || []).length ? ` (${p.zones.length})` : ""}</button>
       <button class="btn block" onclick="go('#/job/${job.id}/wextra')">📷 Other site photos (${photos.filter(x => x.role === "wextra").length})</button>
+      ${w.completion.name ? "" : `<button class="btn block" id="wprog">📈 Send a progress update to ${esc(contactName(job))}${job.progressSent ? ` <span class="sub">(last ${dt5(job.progressSent)})</span>` : ""}</button>`}
       <button class="btn block ${w.completion.name ? "" : allSet ? "warnbtn" : ""}" onclick="go('#/job/${job.id}/wdone')">✍ Finish and sign off ${w.completion.name ? "– signed" : ""}</button>
       <button class="btn ${w.completion.name ? "primary" : ""} block" id="wsend">📤 Send the return to ${esc(contactName(job))}</button>
     </div>
-    <p class="hint">Everything is saved on this phone as you go and works without signal. Nothing is sent until you press <b>Send the return</b> (sign in and out send a short message).</p>
+    <p class="hint">Everything is saved on this phone as you go and works without signal. Nothing is sent until you press <b>Send the return</b> (sign in and out send a short message). On a job of more than a day, send a <b>progress update</b> at the end of each day so the office can see where the works are up to.</p>
     <button class="btn small danger" id="wdel" style="margin-top:16px">Remove this works order from the phone</button>
   </main>`;
   if ($("#win")) $("#win").onclick = () => signInOut(job, "in");
   if ($("#wout")) $("#wout").onclick = () => signInOut(job, "out");
   $("#wsend").onclick = () => sendReturn(job.id);
+  if ($("#wprog")) $("#wprog").onclick = () => sendProgress(job.id);
   $("#wdel").onclick = async () => {
     if (!job.exported && !confirm("The return hasn't been sent yet. Remove this works order and everything recorded for it anyway?")) return;
     if (job.exported && !confirm("Remove this works order and its photos from the phone?")) return;
@@ -180,7 +185,7 @@ async function signInOut(job, kind) {
   const who = name + (p.contractor && p.contractor.company ? ` (${p.contractor.company})` : "");
   const text = kind === "in"
     ? `${who}: signed in at ${p.site} (${p.ref}) at ${t5(rec.when)} – ${people} on site.${where}`
-    : `${who}: signed out of ${p.site} (${p.ref}) at ${t5(rec.when)} – everyone off site. Works: ${c.done} of ${n} done${c.part ? `, ${c.part} part done` : ""}${c.notdone ? `, ${c.notdone} not done` : ""}.`;
+    : `${who}: signed out of ${p.site} (${p.ref}) at ${t5(rec.when)} – everyone off site. Works of ${n}: ${wSummary(c)}.`;
   sendTo(p.contact, text);
   setTimeout(() => route(), 800);
 }
@@ -380,7 +385,7 @@ async function worksMapPage(jobId, itemId) {
   if (!target && !pts.length && (p.zones || []).length) map.fitBounds(L.latLngBounds(p.zones.map(z => [+z.lat, +z.lon])).pad(0.5), { maxZoom: 19 });
   $("#meBtn").onclick = () => map._me ? map.setView(map._me, Math.max(map.getZoom(), 19)) : locateOnce(map);
   const panel = $("#panel");
-  const legend = `<div class="hint">${Object.entries({ "": "To do", done: "Done", part: "Part done", notdone: "Not done" }).map(([k, t]) =>
+  const legend = `<div class="hint">${Object.entries({ "": "To do", started: "In progress", done: "Done", part: "Part done", notdone: "Not done" }).map(([k, t]) =>
     `<span class="wdot" style="background:${W_COL[k]}"></span>${t}`).join(" &nbsp; ")}${(p.zones || []).length ? " &nbsp; <span class='wring'></span>Keep-out zone (tap for why)" : ""}</div>`;
   const check = () => {
     const me = map._me;
@@ -396,7 +401,7 @@ async function worksDonePage(jobId) {
   const job = await DB.get("jobs", jobId); if (!job) return go("#/");
   const w = wk(job), cp = w.completion, s = await settings();
   const d = Object.assign({ arisings: "", tidy: "", damage: "", damageNote: "", notes: "", name: cp.name || s.consultant || w.worker || "", sig: cp.sig || "" }, cp);
-  const left = wItems(job).filter(it => ["", "part", "notdone"].includes(wState(job, it.id).status || ""));
+  const left = wItems(job).filter(it => ["", "started", "part", "notdone"].includes(wState(job, it.id).status || ""));
   const draw = () => {
     app.innerHTML = `
     <header class="top"><button aria-label="Back" onclick="go('#/job/${jobId}')">‹</button><h1>Finish and sign off<span class="sub">${esc(job.site)} · ${esc((job.pack || {}).ref || "")}</span></h1></header>
@@ -442,9 +447,9 @@ function dataUrlBlob(u) {
   return new Blob([a], { type: m[1] });
 }
 
-async function buildWorksReturn(jobId) {
+async function buildWorksReturn(jobId, opt = {}) {
   const job = await DB.get("jobs", jobId), p = job.pack || {}, w = wk(job);
-  const photos = (await DB.by("photos", "job", jobId)).filter(x => x.role !== "doc").sort((a, b) => a.created - b.created);
+  const photos = opt.noPhotos ? [] : (await DB.by("photos", "job", jobId)).filter(x => x.role !== "doc").sort((a, b) => a.created - b.created);
   const zip = new JSZip(), used = new Set();
   const uniq = base => { let n = base, i = 2; while (used.has(n.toLowerCase())) n = `${base} (${i++})`; used.add(n.toLowerCase()); return n; };
   const sigFile = (u, base) => { const b = dataUrlBlob(u); if (!b) return ""; const f = `Signatures/${uniq(safeName(base))}.png`; zip.file(f, b); return f; };
@@ -468,12 +473,40 @@ async function buildWorksReturn(jobId) {
   const cp = Object.assign({}, w.completion); if (cp.sig) cp.sig = sigFile(cp.sig, "Completion " + (cp.name || ""));
   const safety = (job.safety || []).map(r => Object.assign({}, r, { labels: Object.fromEntries(safetyChecks(job, r)) }));
   zip.file("works_return.json", JSON.stringify({
-    format: "works-return", version: 1, app: APP_VERSION, exported: new Date().toISOString(),
+    format: "works-return", version: 1, kind: opt.progress ? "progress" : "final", app: APP_VERSION, exported: new Date().toISOString(),
     pack: { id: p.id, ref: p.ref, site: p.site, made: p.made }, contractor: { name: w.worker || (w.briefing[0] || {}).name || "", company: (p.contractor || {}).company || "" },
     signins: w.signins, briefing, safety, items, extras, completion: cp,
   }, null, 1));
   const blob = await zip.generateAsync({ type: "blob", mimeType: "application/zip" });
-  return { blob, fname: `${safeName(p.site)} ${safeName(p.ref)} works return ${today()}.zip`, job, items: items.length, photos: photos.length };
+  return { blob, fname: `${safeName(p.site)} ${safeName(p.ref)} works ${opt.progress ? "progress" : "return"} ${today()}${opt.progress ? " " + t5(Date.now()).replace(":", "") : ""}.zip`,
+    job, items: items.length, photos: photos.length };
+}
+
+async function shareZip(out, text) {  // -> true (shared), false (saved to Downloads) or null (cancelled)
+  const file = new File([out.blob], out.fname, { type: "application/zip" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: out.fname, text }); return true; }
+    catch (e) { if (e.name === "AbortError") return null; }
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(out.blob); a.download = out.fname;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  return false;
+}
+
+// a progress update part-way through: the same zip marked "progress" – the PC updates the works tracker, no completion report
+async function sendProgress(jobId) {
+  const job = await DB.get("jobs", jobId), c = wCounts(job);
+  const n = (await DB.by("photos", "job", jobId)).filter(x => x.role !== "doc").length;
+  const withPhotos = n ? confirm(`Send the ${n} photo${n === 1 ? "" : "s"} taken so far with the progress update?\n\nOK = with photos, Cancel = just the ticks and notes (smaller – fine on poor signal)`) : false;
+  toast("Preparing the progress update…", 8000);
+  let out;
+  try { out = await buildWorksReturn(jobId, { progress: true, noPhotos: !withPhotos }); } catch (e) { console.error(e); toast("Couldn't make the update: " + e.message, 5000); return; }
+  const p = out.job.pack || {};
+  const shared = await shareZip(out, `Works progress – ${out.job.site} (${p.ref}): ${wSummary(c)} of ${out.items}`);
+  if (shared === null) { toast("Not sent"); return; }
+  out.job.progressSent = Date.now(); await DB.put("jobs", out.job);
+  toast(shared ? "Progress update sent" : `Saved ${out.fname} to Downloads – send it to ${contactName(out.job)}`, 4000);
+  route();
 }
 
 async function sendReturn(jobId) {
@@ -482,19 +515,12 @@ async function sendReturn(jobId) {
   if (onSite(job) && !confirm("You're still signed in. Send the return anyway? (Sign out when you leave site.)")) return;
   if (!w.completion.name && !confirm("The works haven't been signed off yet. Send the return anyway?")) return;
   if (c[""] && !confirm(`${c[""]} item${c[""] === 1 ? " hasn't" : "s haven't"} been marked done, part done or not done. Send anyway?`)) return;
+  if (c.started && !confirm(`${c.started} item${c.started === 1 ? " is" : "s are"} still marked in progress. Send the final return anyway? (For part-way through, use Send a progress update.)`)) return;
   toast("Preparing the return…", 8000);
   let out;
   try { out = await buildWorksReturn(jobId); } catch (e) { console.error(e); toast("Couldn't make the return: " + e.message, 5000); return; }
-  const file = new File([out.blob], out.fname, { type: "application/zip" });
-  let shared = false;
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: out.fname, text: `Works return – ${out.job.site} (${(out.job.pack || {}).ref}): ${c.done} of ${out.items} done, ${out.photos} photos` }); shared = true; }
-    catch (e) { if (e.name === "AbortError") { toast("Not sent"); return; } }
-  }
-  if (!shared) {
-    const a = document.createElement("a"); a.href = URL.createObjectURL(out.blob); a.download = out.fname;
-    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
-  }
+  const shared = await shareZip(out, `Works return – ${out.job.site} (${(out.job.pack || {}).ref}): ${c.done} of ${out.items} done, ${out.photos} photos`);
+  if (shared === null) { toast("Not sent"); return; }
   out.job.exported = Date.now(); out.job.updated = out.job.exported - 1; await DB.put("jobs", out.job);
   toast(shared ? "Return sent" : `Saved ${out.fname} to Downloads – send it to ${contactName(out.job)}`, 4000);
   route();
