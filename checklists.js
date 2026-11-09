@@ -714,5 +714,166 @@ const CHECKLISTS = [
     ]
    ]
   ]
+ },
+ {
+  "key": "mower",
+  "title": "Mower – pre-use check (ride-on and pedestrian)",
+  "group": "Grounds maintenance",
+  "asset": "Make, model and fleet / serial no.",
+  "fields": [
+   "Hours"
+  ],
+  "note": "Before use each day, with the engine off, blades disengaged and the key out (or plug lead off) unless the item says otherwise.",
+  "team": false,
+  "log": [],
+  "sections": [
+   [
+    "Machine – engine off, key out",
+    [
+     "Blades or cylinders – sharp, undamaged and securely fixed",
+     "Guards, deflectors, discharge chute and grass box fitted and undamaged",
+     "Fuel, engine oil and hydraulic oil levels; no leaks",
+     "Tyres – pressures and condition",
+     "Ride-on: roll-over protection (ROPS) up and locked; seat belt working where fitted",
+     "Operator presence (seat) switch or blade-brake handle works – not tied down or bypassed"
+    ]
+   ],
+   [
+    "Running checks",
+    [
+     "Starts and runs normally; no unusual noise or vibration",
+     "Ride-on: brakes, parking brake and steering work",
+     "Blades engage and stop as they should; the engine stops with the stop control"
+    ]
+   ],
+   [
+    "Operator and site",
+    [
+     "Operator trained and competent on this machine; slope limits known",
+     "PPE – safety boots, ear defenders, safety glasses; hi-vis where needed",
+     "Area walked and cleared of stones, litter and hidden objects; exclusion zone and signs set"
+    ]
+   ]
+  ]
+ },
+ {
+  "key": "brushcutter",
+  "title": "Strimmer / brushcutter – pre-use check",
+  "group": "Grounds maintenance",
+  "asset": "Make, model and serial no.",
+  "fields": [
+   "Head fitted (line / blade)"
+  ],
+  "note": "Before use each day and after any knock. Engine off for every check except the running checks.",
+  "team": false,
+  "log": [],
+  "sections": [
+   [
+    "Machine – engine off",
+    [
+     "Guard fitted, the right type for the head, and undamaged",
+     "Line head or blade undamaged, sharp and the right type for the machine; nut and locking washer tight",
+     "Throttle trigger, throttle lock-out and stop switch work",
+     "Harness fitted and adjusted; quick release works",
+     "Fuel tank and cap – no leaks; air filter clean"
+    ]
+   ],
+   [
+    "Running checks",
+    [
+     "Head stops turning at tick-over"
+    ]
+   ],
+   [
+    "Operator and site",
+    [
+     "Operator trained; visor or glasses, ear defenders, gloves, boots and long trousers (chainsaw trousers with a blade)",
+     "Exclusion zone (at least 15 m, more with blades) set and signs out"
+    ]
+   ]
+  ]
+ },
+ {
+  "key": "hedgetrimmer",
+  "title": "Hedge trimmer – pre-use check (hand-held and long-reach)",
+  "group": "Grounds maintenance",
+  "asset": "Make, model and serial no.",
+  "fields": [],
+  "note": "Before use each day. Engine off or battery out for every check except the running checks.",
+  "team": false,
+  "log": [],
+  "sections": [
+   [
+    "Machine – engine off / battery out",
+    [
+     "Blades sharp, undamaged, no missing teeth, adjusted and lubricated",
+     "Blade guard / scabbard present",
+     "Handles, two-hand controls, throttle lock-out and stop switch work",
+     "Fuel or battery – no leaks; battery undamaged",
+     "Long-reach: shaft, joints and harness secure"
+    ]
+   ],
+   [
+    "Running checks",
+    [
+     "Blades stop when the throttle is released"
+    ]
+   ],
+   [
+    "Operator and site",
+    [
+     "Operator trained; visor or glasses, ear defenders, gloves, boots",
+     "Hedge checked for active nests, wires, fences, litter and overhead lines; height work planned (no ladder leaning on the hedge)"
+    ]
+   ]
+  ]
+ },
+ {
+  "key": "sprayer",
+  "title": "Knapsack sprayer – pre-use check and spray record",
+  "group": "Grounds maintenance",
+  "asset": "Sprayer ID / serial no.",
+  "fields": [
+   "Product (name and MAPP no.)",
+   "Dose rate",
+   "Site / area treated"
+  ],
+  "note": "Before each use, by the certificated operator (PA1 + PA6). Read the product label and COSHH assessment first. The boxes at the end are the application record – keep it for at least 3 years.",
+  "team": false,
+  "log": [
+   "Start time",
+   "Finish time",
+   "Volume applied (litres)",
+   "Wind (speed and direction)",
+   "Weather and temperature",
+   "Operator certificate no."
+  ],
+  "sections": [
+   [
+    "Sprayer",
+    [
+     "Tank, lid, seals and straps – no cracks or leaks",
+     "Lance, hose, trigger and nozzle – no leaks; low-drift nozzle of the right type and not worn",
+     "Pressure regulator working; calibrated for the dose rate"
+    ]
+   ],
+   [
+    "Product and site",
+    [
+     "Product approved for amenity use and in date; label read; COSHH assessment held",
+     "Weather suitable – no rain expected, light wind, not hot and still",
+     "Water, drains and sensitive areas identified; label buffer zones known; regulator's agreement held for use in or near water",
+     "Public kept out of the area; warning signs ready for treated areas"
+    ]
+   ],
+   [
+    "Operator",
+    [
+     "Certificate of competence held (PA1 + PA6; PA6AW near water)",
+     "PPE as the label says – chemical-resistant gloves, coveralls, boots, face protection",
+     "Washing water, pesticide spill kit and product secured in the vehicle"
+    ]
+   ]
+  ]
  }
 ];

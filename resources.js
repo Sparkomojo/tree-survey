@@ -14,7 +14,13 @@ const RESOURCES = {
   "Hedge cutting operative",
   "Traffic management operative",
   "Slinger / signaller",
-  "Team leader / supervisor"
+  "Team leader / supervisor",
+  "Mower operator - ride-on",
+  "Mower operator - pedestrian",
+  "Strimmer / brushcutter operator",
+  "Pesticide operator - hand-held",
+  "Tractor / flail operator",
+  "Grounds maintenance operative"
  ],
  "plant": [
   "Crew vehicle (4x4 / pickup)",
@@ -29,7 +35,12 @@ const RESOURCES = {
   "Log splitter",
   "Crane (contract lift, with operator)",
   "Chapter 8 vehicle (beacons, chevrons)",
-  "Welfare unit"
+  "Welfare unit",
+  "Ride-on mower",
+  "Pedestrian mower",
+  "Remote-controlled slope mower",
+  "Tractor with flail / verge mower",
+  "Salt spreader (towed)"
  ],
  "equipment": [
   [
@@ -167,6 +178,34 @@ const RESOURCES = {
   [
    "First aid and welfare",
    "Phones / radios"
+  ],
+  [
+   "Grounds maintenance",
+   "Line trimmer / strimmer"
+  ],
+  [
+   "Grounds maintenance",
+   "Knapsack sprayer"
+  ],
+  [
+   "Grounds maintenance",
+   "Pesticide spill kit and lockable chest"
+  ],
+  [
+   "Grounds maintenance",
+   "Litter pickers and sharps box"
+  ],
+  [
+   "Grounds maintenance",
+   "Leaf vacuum"
+  ],
+  [
+   "Grounds maintenance",
+   "Hand tools (spades, forks, hoes, shears)"
+  ],
+  [
+   "Grounds maintenance",
+   "Pusher shovels and ice grips"
   ]
  ],
  "works": [
@@ -469,6 +508,153 @@ const RESOURCES = {
    ],
    "equipment": [
     "Rear-handled chainsaw (small)"
+   ]
+  },
+  {
+   "key": "gm_mow",
+   "name": "Grass cutting",
+   "crew": [
+    [
+     "Mower operator - ride-on",
+     1
+    ],
+    [
+     "Grounds maintenance operative",
+     1
+    ]
+   ],
+   "plant": [
+    "Vehicle and trailer",
+    "Ride-on mower",
+    "Pedestrian mower"
+   ],
+   "equipment": [
+    "Line trimmer / strimmer",
+    "Leaf blower",
+    "Barriers and warning signs"
+   ]
+  },
+  {
+   "key": "gm_strim",
+   "name": "Strimming / brushcutting",
+   "crew": [
+    [
+     "Strimmer / brushcutter operator",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)"
+   ],
+   "equipment": [
+    "Line trimmer / strimmer",
+    "Brushcutter / clearing saw",
+    "Barriers and warning signs"
+   ]
+  },
+  {
+   "key": "gm_flail",
+   "name": "Verge / hedge flailing",
+   "crew": [
+    [
+     "Tractor / flail operator",
+     1
+    ],
+    [
+     "Traffic management operative",
+     1
+    ]
+   ],
+   "plant": [
+    "Tractor with flail / verge mower",
+    "Chapter 8 vehicle (beacons, chevrons)"
+   ],
+   "equipment": [
+    "Chapter 8 signs, cones and lamps"
+   ]
+  },
+  {
+   "key": "gm_herbicide",
+   "name": "Herbicide application",
+   "crew": [
+    [
+     "Pesticide operator - hand-held",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)"
+   ],
+   "equipment": [
+    "Knapsack sprayer",
+    "Pesticide spill kit and lockable chest",
+    "Barriers and warning signs"
+   ]
+  },
+  {
+   "key": "gm_leaves",
+   "name": "Leaf clearance",
+   "crew": [
+    [
+     "Grounds maintenance operative",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)"
+   ],
+   "equipment": [
+    "Leaf blower",
+    "Leaf vacuum",
+    "Tarpaulins and rakes"
+   ]
+  },
+  {
+   "key": "gm_litter",
+   "name": "Litter picking",
+   "crew": [
+    [
+     "Grounds maintenance operative",
+     1
+    ]
+   ],
+   "plant": [],
+   "equipment": [
+    "Litter pickers and sharps box"
+   ]
+  },
+  {
+   "key": "gm_beds",
+   "name": "Shrub beds, planting and mulching",
+   "crew": [
+    [
+     "Grounds maintenance operative",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)"
+   ],
+   "equipment": [
+    "Hand tools (spades, forks, hoes, shears)",
+    "Handsaws and secateurs"
+   ]
+  },
+  {
+   "key": "gm_grit",
+   "name": "Gritting and snow clearance",
+   "crew": [
+    [
+     "Grounds maintenance operative",
+     1
+    ]
+   ],
+   "plant": [
+    "Crew vehicle (4x4 / pickup)",
+    "Salt spreader (towed)"
+   ],
+   "equipment": [
+    "Pusher shovels and ice grips"
    ]
   }
  ],
