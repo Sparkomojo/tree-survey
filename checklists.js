@@ -11,6 +11,7 @@ const CHECKLISTS = [
   ],
   "note": "Before the first journey of the day. The 'Working on the highway' items are aligned with Chapter 8 of the Traffic Signs Manual – check them against the current edition and the client's or highway authority's requirements.",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Before driving",
@@ -67,6 +68,7 @@ const CHECKLISTS = [
   ],
   "note": "Every time the trailer is hitched up.",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Coupling",
@@ -117,6 +119,7 @@ const CHECKLISTS = [
   ],
   "note": "Before use each day, with the engine off and the key out unless the item says otherwise. Follow the manufacturer's handbook.",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Set-up",
@@ -166,6 +169,7 @@ const CHECKLISTS = [
   ],
   "note": "Before use each day, with the engine off and the key out unless the item says otherwise. Follow the manufacturer's handbook.",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Site",
@@ -211,6 +215,7 @@ const CHECKLISTS = [
   "fields": [],
   "note": "Before use each day and after any knock or fall.",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Safety features",
@@ -254,6 +259,7 @@ const CHECKLISTS = [
   ],
   "note": "Before use each day by the trained operator. A MEWP lifts people, so its LOLER thorough examination is due at least every 6 months.",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Paperwork",
@@ -302,6 +308,7 @@ const CHECKLISTS = [
   ],
   "note": "Before each use by the climber. Equipment for lifting people and lifting accessories needs a LOLER thorough examination at least every 6 months; quarantine anything you're unsure of.",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Paperwork",
@@ -348,6 +355,13 @@ const CHECKLISTS = [
   ],
   "note": "Before each flight. Check against the current CAA rules for your category of operation.",
   "team": false,
+  "log": [
+   "Take-off time",
+   "Landing time",
+   "Flight time (min)",
+   "Max height (m)",
+   "Flight issues or incidents"
+  ],
   "sections": [
    [
     "Planning",
@@ -380,6 +394,84 @@ const CHECKLISTS = [
   ]
  },
  {
+  "key": "drone_survey",
+  "title": "Drone tree survey – field checklist (photography and photogrammetry)",
+  "group": "Drone",
+  "asset": "Drone (make, model, serial)",
+  "fields": [
+   "Site / job reference",
+   "Purpose (photos / photogrammetry / inspection)"
+  ],
+  "note": "DJI Air 3S tree photography and 3DF Zephyr photogrammetry – use with the drone pre-flight check and the RAMS. Answer N/A to the photogrammetry items if you aren't making a model. In winter, leaf-off light shows the branch structure well. Fill in the flight log at the end.",
+  "team": false,
+  "log": [
+   "Take-off time",
+   "Landing time",
+   "Number of flights",
+   "Total flight time (min)",
+   "Batteries used",
+   "Max height (m)",
+   "Weather and wind",
+   "Trees / area flown",
+   "Images backed up to",
+   "Flight issues or incidents"
+  ],
+  "sections": [
+   [
+    "Before you fly",
+    [
+     "Operator ID and Flyer ID on the drone and in the Fly app",
+     "Site checked for airspace restrictions, people, roads and private property",
+     "Wind under about 15 mph (gusts matter), no rain",
+     "Batteries charged, spare set packed, SD card cleared",
+     "Props, gimbal and lens clean; polariser or ND filter fitted",
+     "Rescue plan if the drone snags in a crown",
+     "Risk assessment and permissions recorded"
+    ]
+   ],
+   [
+    "Camera – photography",
+    [
+     "RAW (DNG), manual exposure, ISO 100",
+     "Shutter 1/500 s or faster to freeze leaf movement",
+     "Apertures are fixed (wide f/1.8, 3x tele f/2.8) – exposure set with shutter speed and ISO",
+     "Polariser to cut leaf glare and deepen greens (ND for video)",
+     "Lens: 3x tele (70 mm) for layered woodland and distance – it can't focus closer than about 3 m; wide (24 mm) for context and close work",
+     "Light: low sun at the start or end of the day for texture; flat midday light avoided where possible",
+     "Dappled canopy: exposed for the highlights, shadows lifted later; bracketed (AEB) if the contrast is extreme"
+    ]
+   ],
+   [
+    "Camera – photogrammetry (3DF Zephyr)",
+    [
+     "Exposure manual and locked, so brightness is the same across the set",
+     "Flat, overcast light (gives the cleanest models)",
+     "12 MP is usually enough – 50 MP files are huge and slow to process",
+     "Single tree: orbits at three heights (low, mid, above the crown), camera about 45°, 10–15° between shots, plus a few nadir shots",
+     "Site grid: 80% front overlap, 70% side overlap",
+     "Calm – moving leaves spoil a model more than anything else, so wait for the wind to drop"
+    ]
+   ],
+   [
+    "During the flight",
+    [
+     "Drone in visual line of sight and close to the tree",
+     "Safe distance from branches – obstacle avoidance can miss thin twigs",
+     "Manual control near the crown",
+     "Mission planned on the ground first – flight time is limited",
+     "Battery watched; returned with a safe reserve"
+    ]
+   ],
+   [
+    "After the flight",
+    [
+     "Cards backed up on site or the same day",
+     "A sample of images checked for sharpness and exposure before leaving"
+    ]
+   ]
+  ]
+ },
+ {
   "key": "site_ra",
   "title": "On-site risk assessment – tree work",
   "group": "Site",
@@ -395,6 +487,7 @@ const CHECKLISTS = [
   ],
   "note": "Completed by the team leader on arrival, before work starts, with the RAMS for the job. Brief the team and get everyone to sign. Review it if anything changes.",
   "team": true,
+  "log": [],
   "sections": [
    [
     "Public, property and access",
@@ -457,6 +550,7 @@ const CHECKLISTS = [
   "fields": [],
   "note": "Every time, before use. Ladders are for short-duration, light work only; a detailed inspection is recorded at least every 12 months.",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Ladder",
@@ -490,6 +584,7 @@ const CHECKLISTS = [
   ],
   "note": "Before each use near overhead lines or rail equipment. Only competent, authorised people use them, under the network operator's rules and permits. If in any doubt – quarantine it.",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Tool",
@@ -522,6 +617,7 @@ const CHECKLISTS = [
   ],
   "note": "Before any work on or next to water, or from a boat. Inspected every 6 months and serviced (cylinder / firing head) every 12 months.",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Lifejacket",
@@ -553,6 +649,7 @@ const CHECKLISTS = [
   ],
   "note": "Before each use. Reusable RPE also needs a recorded thorough examination at least monthly (no more than 3-monthly if used only occasionally).",
   "team": false,
+  "log": [],
   "sections": [
    [
     "Respirator",
@@ -580,6 +677,7 @@ const CHECKLISTS = [
   ],
   "note": "Before rope access work starts each day, led by the IRATA Level 3 supervisor. Equipment detailed inspection at least every 6 months; interim inspections where the risk assessment calls for them.",
   "team": true,
+  "log": [],
   "sections": [
    [
     "Team",

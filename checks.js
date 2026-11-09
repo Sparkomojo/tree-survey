@@ -96,6 +96,8 @@ async function checkForm(key) {
         ${CHECK_ANS.map(([v, t]) => `<button class="chip small ${a.answer === v ? "on" : ""} ${v === "defect" ? "danger" : ""}" data-v="${v}">${t}</button>`).join("")}</div>
         <input class="dnote" placeholder="What's wrong / action taken" value="${esc(a.note)}" ${a.answer === "defect" || a.note ? "" : "hidden"}></div>`;
     }).join("")).join("")}
+    ${(cl.log || []).length ? `<h3 class="subhead">${cl.group === "Drone" ? "Flight log" : "Log"}</h3>` + cl.log.map((f, n) => `<label for="lg${n}">${esc(f)}</label><input id="lg${n}" data-f="${esc(f)}" value="${esc(rec.fields[f] || "")}"${/time$/i.test(f) ? ' placeholder="hh:mm"' : ""}>`).join("") +
+      (cl.group === "Drone" ? `<p class="hint">Goes into the Drone flights log on the PC when the checks are imported.</p>` : "") : ""}
     <label for="notes">${cl.team ? "Other hazards and controls" : "Other notes"}</label><textarea id="notes" rows="3">${esc(rec.notes)}</textarea>
     ${cl.team ? `<h3 class="subhead">Team briefing</h3><p class="hint">Each member of the team signs to say they've been briefed on this assessment and the RAMS. The team leader signs at the bottom.</p><div id="team"></div>
       <button class="btn small" id="addp">＋ Add person</button>` : ""}
