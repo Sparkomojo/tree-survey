@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.31";
+const APP_VERSION = "1.32";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -519,7 +519,7 @@ async function treePage(jobId, treeId) {
   const pick = (k, opts) => `<div class="chips" data-pick="${k}">${opts.map(o => `<button class="chip ${t[k] === o ? "on" : ""}" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div>`;
   const ta = (k, lab, phrases) => `<label for="f_${k}">${lab}</label><textarea id="f_${k}" data-f="${k}">${esc(t[k] ?? "")}</textarea>
     <div class="chips phr">${phrases.map(p => `<button class="chip" data-add="f_${k}"${k === "comments" ? " data-detail" : ""}>${esc(p)}</button>`).join("")}</div>
-    ${k === "comments" ? `<div class="row" style="margin-top:6px"><button class="btn small" id="addDefect">＋ Defect / feature</button><button class="btn small" id="addFungus">🍄 Fungus / disease</button></div>` : ""}`;
+    ${k === "comments" ? `<div class="row" style="margin-top:6px"><button class="btn small" id="addDefect">＋ Defect / feature</button><button class="btn small" id="addFungus">🍄 Fungus / disease</button><button class="btn small" id="addPest">🐛 Pest / disease</button></div>` : ""}`;
 
   app.innerHTML = `
   <header class="top"><button aria-label="Back to tree list" id="back">‹</button>
@@ -818,6 +818,17 @@ async function treePage(jobId, treeId) {
         addObs(text, details ? Object.assign(details, { fungus: f.sci, significance: f.sig }) : { name: text, fungus: f.sci, significance: f.sig });
         if (f.sig === "High" && !t.recs) toast(`${f.com}: high significance – consider further investigation`, 3500);
       }, { part: f.part, info: fungusInfo(f) });
+    });
+  };
+  $("#addPest").onclick = e => {
+    e.preventDefault();
+    pestSheet(speciesText(t) || t.species, f => {
+      defectSheet(pestPhrase(f), s.phrases.obs, (text, details) => {
+        addObs(text, details ? Object.assign(details, { pest: f.sci, significance: f.sig, report: f.report || "" }) : { name: text, pest: f.sci, significance: f.sig, report: f.report || "" });
+        if (/notifiable/i.test(f.report || "")) toast(`${f.com} is notifiable – report it through TreeAlert`, 4500);
+        else if (f.report) toast(`${f.com}: report it through TreeAlert`, 3500);
+        else if (f.sig === "High" && !t.recs) toast(`${f.com}: high significance – consider further investigation`, 3500);
+      }, { part: f.part, info: pestInfo(f) });
     });
   };
   const braceCheck = () => {

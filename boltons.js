@@ -200,6 +200,8 @@ const PROP_PART = ["House", "Extension", "Garage", "Conservatory", "Outbuilding"
 const PROP_OWNER = ["Client's", "Neighbour's", "Council / highway", "Unknown"];
 const PROP_DIRECT = ["Roots lifting paving", "Stem / roots against a wall", "Branches touching the building", "Roots near drains", "Debris in gutters", "Overhanging the roof"];
 const PROP_IMPL = ["Implicated", "Possibly implicated", "Not implicated"];
+const PROP_PROTECT = ["TPO", "Conservation area", "Not protected", "Not checked"];
+const PROP_EVIDENCE = ["Engineer's report", "Site investigation", "Root identification", "Level monitoring", "Crack monitoring", "Drain survey", "Repair proposal"];
 function propInfluence(t) {
   const p = t.prop || {}, wd = p.water || waterDemand(t.species), h = Math.max(parseFloat(t.height) || 0, parseFloat(p.matureH) || 0), d = parseFloat(p.dist);
   if (!wd || !h || !(d >= 0)) return null;
@@ -241,7 +243,9 @@ function boltTreeBoxes(t, job, s) {
       <label>Water demand ${wd && !p.water ? `<span class="hint">(${wd} from the species)</span>` : ""}</label>${chips("water", ["High", "Moderate", "Low"], p.water || "")}
       <div class="roh" id="propOut"></div>
       <label>Direct damage</label>${chips("direct", PROP_DIRECT, p.direct, true)}
-      ${(job.property || {}).purpose === "Subsidence" ? `<label>Subsidence</label>${chips("implicated", PROP_IMPL, p.implicated)}` : ""}
+      <label>Protection</label>${chips("protect", PROP_PROTECT, p.protect)}
+      ${(job.property || {}).purpose === "Subsidence" ? `<label>Subsidence</label>${chips("implicated", PROP_IMPL, p.implicated)}
+      <div class="hint">Leave blank to let the evidence decide – the PC report suggests a conclusion from the site investigation, roots and monitoring.</div>` : ""}
     </details>`);
   }
   if (bo.bat) {
@@ -424,7 +428,10 @@ function boltDetails(job, s) {
         <label for="pr_build">Building (type, age, construction)</label><input id="pr_build" data-bin="building" placeholder="e.g. 1930s semi-detached, brick, rear extension 2005" value="${esc(pr.building || "")}">
         <label for="pr_soil">Soil (if known)</label><input id="pr_soil" data-bin="soil" placeholder="e.g. boulder clay (BGS map)" value="${esc(pr.soil || "")}">
         <label for="pr_damage">Damage seen (cracks: where, width, direction)</label><textarea id="pr_damage" data-bin="damage" rows="2">${esc(pr.damage || "")}</textarea>
-        ${pr.purpose === "Subsidence" ? `<label>Damage category (BRE Digest 251)</label>${chips("bre", ["0", "1", "2", "3", "4", "5"], pr.bre)}` : ""}
+        ${pr.purpose === "Subsidence" ? `<label>Damage category (BRE Digest 251)</label>${chips("bre", ["0", "1", "2", "3", "4", "5"], pr.bre)}
+        <label for="pr_la">Local planning authority</label><input id="pr_la" data-bin="la" placeholder="for TPO / conservation area trees" value="${esc(pr.la || "")}">
+        <label>Evidence available so far</label>${chips("evidence", PROP_EVIDENCE, pr.evidence, true)}
+        <div class="hint">Type the details in on the PC: Bolt-on reports → Subsidence evidence sheets. The report is written from whatever there is.</div>` : ""}
       </div>` : ""}
       ${!["NEST", "ESTAB"].includes(job.type) ? `<label>Bolt-ons for this survey</label><div class="chips" id="boltChips">${BOLT_LIST.map(([k, l]) => `<button class="chip ${bo[k] ? "on" : ""}" data-v="${k}">${l}</button>`).join("")}</div>` : ""}
       ${bolts(job).estab ? `<div class="card" id="estcard"><h3 class="subhead">Young trees – establishment check</h3>

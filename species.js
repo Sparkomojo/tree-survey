@@ -1,6 +1,7 @@
 // Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 // Species pick-list: "Botanical - Common" (the format the report builders split on).
 // Anything typed that isn't in the list is kept exactly as typed.
+// Includes European shrubs (the toolkit's shrubs_data.json) for hedges, shrub beds and subsidence work.
 const SPECIES = `Abies alba - Silver fir
 Abies amabilis - Pacific silver fir
 Abies borisii-regis - King boris's fir
@@ -107,6 +108,7 @@ Alnus spaethii - Spaeth alder
 Amelanchier arborea - Downy serviceberry
 Amelanchier laevis - Serviceberry
 Amelanchier lamarckii - Snowy mespilus
+Amelanchier ovalis - Snowy mespilus
 Amelanchier sp. - Amelanchier
 Aralia spinosa - Devils walking stick
 Araucaria araucana - Monkey puzzle
@@ -116,17 +118,20 @@ Arbutus andrachnoides - Hybrid strawberry tree
 Arbutus menziesii - Pacific madrone
 Arbutus sp. - Arbutus
 Arbutus unedo - Strawberry tree
+Arctostaphylos uva-ursi - Bearberry
 Ardisia quinquegona - Incense Tree
 Aria edulis 'Lutescens' - Sorbus 'Lutescens'
 Aria edulis 'Majestica' - Sorbus 'Majestica'
 Aria edulis 'Wilfred Fox' - Sorbus 'Wilfred Fox'
 Aria edulis - Whitebeam
 Athrotaxis laxifolia - Summit cedar
+Atriplex halimus - Shrubby orache
 Aucuba Japonica - Japanese laurel
 Aucuba japonica variegated varieties - Spotted laurel
 Austrocedrus chilensis - Chilean incense cedar
 Bambusa sp. - Bamboo
 Berberis sp. - Berberis
+Berberis vulgaris - Barberry
 Betula alba - Common birch
 Betula albosinensis - Chinese red birch
 Betula ermanii - Erman's birch
@@ -150,10 +155,12 @@ Broussonetia papyrifera - Paper mulberry
 Buddleia sp. - Buddleia
 Buddleja davidii - Butterfly bush
 Buddleja sp. - Buddleja
+Bupleurum fruticosum - Shrubby hare's-ear
 Buxus balearica - Balearic box
 Buxus sempervirens - Box
 Buxus sp. - Box
 Callitropsis nootkatensis - Nootka cypress
+Calluna vulgaris - Heather
 Calocedrus decurrens - Incense cedar
 Calycanthus floridus - Carolina allspice
 Carpinus betulus 'Fastigiata' - Hornbeam 'Fastigiata'
@@ -210,10 +217,17 @@ Chamaecyparis obtusa - Hinoki cypress
 Chamaecyparis pisifera - Sawara cypress
 Chamaecyparis sp. - False cypress
 Chamaecyparis thyoides - Southern white cedar
+Chamaecytisus purpureus - Purple broom
 Chrysolepis chrysophylla - Golden chestnut
+Cistus albidus - Grey-leaved rock rose
+Cistus ladanifer - Gum rock rose
+Cistus monspeliensis - Montpellier rock rose
+Cistus salviifolius - Sage-leaved rock rose
 Cladrastis kentuckea - Yellow-wood
 Cladrastis Lutea - Yellow wood
+Clematis vitalba - Traveller's joy
 Clerodendrum trichotomum - Glory tree
+Colutea arborescens - Bladder senna
 Cordyline australis - Cabbage tree
 Cornus alba - Red-barked dogwood
 Cornus capitata - Bentham's cornel
@@ -231,6 +245,7 @@ Corylus maxima - Filbert
 Corylus sp. - Hazel species
 Cotinus coggygria - Smokebush
 Cotoneaster frigidus - Himalayan tree-cotoneaster
+Cotoneaster integerrimus - Wild cotoneaster
 Cotoneaster simonsii - Himalyan cotoneaster
 Cotoneaster spp. - Cotoneaster
 Crataegus azarolus - Mediterranean Medlar, Hawthorn
@@ -246,22 +261,35 @@ Crataegus x lavalleei - Hybrid cockspur thorn
 Crinodendron hookerianum - Chilean lantern tree
 Cryptomeria japonica - Japanese cedar
 Cunninghamia lanceolata - China fir
+X Cupressocyparis leylandii 'Green Spire' - Leyland cypress 'Green Spire'
+X Cupressocyparis leylandii 'Haggerston Grey' - Leyland cypress 'Haggerston Grey'
 Cupressus arizonica - Arizona cypress
 Cupressus arizonica var. glabra - Smooth Arizona cypress
 Cupressus macrocarpa - Monterey cypress
 Cupressus sempervirens - Italian cypress
 Cupressus sp. - Cypress
 Cupressus x leylandii - Leyland cypress
+X Cuprocyparis leylandii - Leyland cypress
 Cydonia oblonga - Quince
 Cytisus battandieri - Pineapple broom
+Cytisus multiflorus - White Spanish broom
+Cytisus scoparius - Broom
+Daphne laureola - Spurge laurel
+Daphne mezereum - Mezereon
 Davidia involucrata - Handkerchief Tree
 Diospyros lotus - Date plum
 Diospyros virginiana - Persimmon date plum
 Drimys winteri - Winter's bark
 Drimys winteri winteri - Winters bark
+Elaeagnus angustifolia - Oleaster
 Elaeagnus commutata - Silver berry
 Elaeagnus spp. - Elaeagnus
 Embothrium coccineum - Chilean fire bush
+Empetrum nigrum - Crowberry
+Erica arborea - Tree heath
+Erica carnea - Winter heath
+Erica cinerea - Bell heather
+Erica tetralix - Cross-leaved heath
 Eriobotrya japonica - Japanese medlar
 Eucalyptus dalrympleana - Broad leaf kindling bark gum
 Eucalyptus globulus - Blue gum
@@ -275,6 +303,7 @@ Eucryphia glutinosa - Eucryphia glutinosa
 Eucryphia nymansensis - Nymans hybrid eucryphia
 Euodia hupehensis - Bee tree
 Euonymus europaeus - Spindle
+Euonymus latifolius - Broad-leaved spindle
 Fagus englerana - Chinese beech
 Fagus orientalis - Oriental beech
 Fagus sp. - Beech
@@ -304,6 +333,8 @@ Fraxinus raywood - Ash 'Raywood'
 Fraxinus sp. - Ash
 Garrya elliptica - Coast silktassel
 Genista aetnensis - Mount etna broom
+Genista hispanica - Spanish gorse
+Genista tinctoria - Dyer's greenweed
 Ginkgo biloba - Maidenhair tree
 Gleditsia inermis - Gleditsia 'Inermis'
 Gleditsia sp. - Gleditsia
@@ -314,9 +345,13 @@ Griselinia sp. - Griselinia
 Gymnocladus dioicus - Kentucky coffeetree
 Halesia monticola - Snowdrop tree
 Hamamelis virginiana - Witch hazel
+Hedera helix - Ivy
 Hedera sp. - Ivy
+Hippocrepis emerus - Scorpion senna
 Hippophae rhamnoides - Common sea buckthorn
 Hippophae salicifolia - Willow-leaved sea buckthorn
+Hypericum androsaemum - Tutsan
+Hypericum calycinum - Rose of Sharon
 Idesia polycarpa - Idesia
 Ilex aquifolium 'Ferox' - Hedgehog holly
 Ilex aquifolium - Holly
@@ -331,6 +366,7 @@ Ilex x altaclarensis 'Wilsonii' - Holly 'Wilsonii'
 Ilex x altaclarensis - Golden king holly
 Ilex x Koehneana - Chestnut leaf holly
 Ilex × altaclerensis - Highclere holly
+Jasminum fruticans - Wild jasmine
 Juglans ailanthifolia - Japanese walnut
 Juglans cinerea - Butternut
 Juglans mandschurica - Manchurian walnut
@@ -342,6 +378,7 @@ Juniperus communis - Common juniper
 Juniperus drupacea - Syrian juniper
 Juniperus recurva - Drooping juniper
 Juniperus rigida - Temple juniper
+Juniperus sabina - Savin
 Juniperus sp. - Juniper
 Juniperus squamata - Meyers blue juniper
 Juniperus virginiana - Eastern red cedar
@@ -363,6 +400,7 @@ Larix sp. - Larch
 Larix x eurolepis - Hybrid larch
 Laurus nobilis - Bay tree
 Laurus sp. - Laurel
+Lavandula angustifolia - Lavender
 Ligustrum lucidum - Chinese privet
 Ligustrum ovalifolium - Privet
 Ligustrum sp. - Ligustrum
@@ -373,7 +411,11 @@ Liquidamber orientalis - Oriental sweetgum
 Liquidamber styraciflua - Sweetgum
 Liriodendron chinense - Chinese tulip tree
 Liriodendron tulipifera - Tulip tree
+Lonicera caprifolium - Perfoliate honeysuckle
+Lonicera nigra - Black-berried honeysuckle
+Lonicera periclymenum - Honeysuckle
 Lonicera sp. - Honeysuckle
+Lonicera xylosteum - Fly honeysuckle
 Maclura pomifera - Osage orange
 Magnolia acuminata - Cucumber tree
 Magnolia campbellii - Campbell's magnolia
@@ -410,7 +452,10 @@ Metasequoia glyptostroboides - Dawn redwood
 Morus alba - White mulberry
 Morus nigra - Black mulberry
 Morus sp. - Mulberry
+Myrica gale - Bog myrtle
+Myrtus communis - Myrtle
 Myrtus luma - Orange-bark myrtle
+Nerium oleander - Oleander
 Not identified - Not identified
 Nothofagus antarctica - Antartic beech
 Nothofagus dombeyi - Dombey's southern beech
@@ -425,12 +470,15 @@ Olea europaea - Olive
 Ostrya carpinifolia - European hop-hornbeam
 Other - Other
 Oxydendrum arboreum - Sorrel tree
+Paliurus spina-christi - Christ's thorn
 Parrotia persica - Persian ironwood
 Paulownia sp. - Paulownia
 Paulownia tomentosa - Foxglove tree
 Phellodendron amurense - Amur cork tree
 Phellodendron japonicum - Japanese cork tree
+Philadelphus coronarius - Mock orange
 Phillyrea latifolia - Phillyrea
+Phlomis fruticosa - Jerusalem sage
 Phoenix canariensis - Canary palm
 Photinia davidiana - Photinia davidiana
 Photinia sp. - Photinia
@@ -508,6 +556,7 @@ Pinus strobus - Weymouth pine
 Pinus sylvestris - Scots pine
 Pinus thunbergii - Japanese black pine
 Pinus wallichiana - Bhutan pine
+Pistacia lentiscus - Mastic tree
 Pittosporum sp. - Pittosporum
 Pittosporum tobira - Australian laurel
 Platanus orientalis - Oriental plane
@@ -535,6 +584,7 @@ Populus x canadensis 'Serotina Aurea' - Golden poplar
 Populus x canadensis 'Serotina' - Black Italian poplar
 Populus x canadensis - Hybrid black poplar
 Populus x canescens - Grey poplar
+Potentilla fruticosa - Shrubby cinquefoil
 Prunus 'Accolade' - Prunus 'Accolade'
 Prunus 'Amanogawa' - Prunus 'Amanogawa'
 Prunus 'Cheals Weeping' - Cheal's Weeping cherry
@@ -561,6 +611,7 @@ Prunus himalaica - Himalayan cherry
 Prunus laurocerasus - Cherry laurel
 Prunus lusitanica - Portugal laurel
 Prunus maackii - Manchurian cherry
+Prunus mahaleb - St Lucie cherry
 Prunus padus - Bird cherry
 Prunus persica - Peach
 Prunus sargentii - Japanese cherry
@@ -571,6 +622,7 @@ Prunus sp. 'Cherry' - Cherry
 Prunus spinosa - Blackthorn
 Prunus spp. - Ornamental cherry
 Prunus subhirtella - Winter-flowering cherry
+Prunus tenella - Dwarf Russian almond
 Prunus x schmittii - Schmitts cherry
 Prunus x yedoensis - Yoshino cherry
 Pseudotsuga japonica - Japanese Douglas fir
@@ -580,6 +632,7 @@ Pseudotsuga sp. - Fir (pseudotsuga)
 Pterocarya fraxinifolia - Caucasian wingnut
 Pterocarya rehderana - Hybrid wingnut
 Pterocarya stenoptera - Chinese wingnut
+Pyracantha coccinea - Firethorn
 Pyracantha sp. - Pyracantha
 Pyrus calleryana 'Chanticleer' - Chanticleer pear
 Pyrus calleryana - Callery pear
@@ -624,6 +677,7 @@ Quercus velutina - Black oak
 Quercus x hispanica 'Lucombeana' - Lucombe oak
 Reynoutria japonica - Japanese knotweed
 Rhamnus alaternus 'Argenteovariegata' - Variegated buckthorn
+Rhamnus alaternus - Italian buckthorn
 Rhamnus cathartica - Buckthorn
 Rhamnus catharticus - Purging buckthorn
 Rhamnus sp. - Buckthorn species
@@ -631,16 +685,22 @@ Rhododendron arboreum - Tree rhododendron
 Rhododendron barbatum - Barbatum
 Rhododendron calophytum - Calophytum
 Rhododendron falconeri - Falconer
+Rhododendron ferrugineum - Alpenrose
 Rhododendron griffithianum - Griffithianum
 Rhododendron macabeanum - Macabeanum
 Rhododendron ponticum - Rhododendron
 Rhododendron rex - Rex
 Rhododendron sinogrande - Sinogrande
+Rhus coriaria - Sicilian sumac
 Rhus glabra - Smooth sumac
 Rhus potaninii - Chinese varnish tree
 Rhus sp. - Sumac
 Rhus typhina - Stag's horn sumach
 Rhus verniciflua - Varnish tree
+Ribes alpinum - Mountain currant
+Ribes nigrum - Blackcurrant
+Ribes rubrum - Redcurrant
+Ribes uva-crispa - Gooseberry
 Robinia hispida 'Rosea' - Pink acacia
 Robinia hispida - Rose acacia
 Robinia pseudoacacia 'Frisia' - Golden robinia
@@ -648,17 +708,25 @@ Robinia pseudoacacia 'Umbraculifera' - Mop-head acacia
 Robinia pseudoacacia - False acacia
 Robinia pseudoacacia Frisia - Golden acacia
 Robinia sp. - Robinia
+Rosa arvensis - Field rose
 Rosa canina - Dogrose
+Rosa rubiginosa - Sweet briar
+Rosa spinosissima - Burnet rose
 Rosmarinus sp. - Rosea rosemary
+Rubus fruticosus agg. - Bramble
+Rubus idaeus - Raspberry
 Rubus sp. - Bramble
+Ruscus aculeatus - Butcher's broom
 Salix alba - White willow
 Salix alba sericea - Silver willow
+Salix aurita - Eared willow
 Salix babylonica - Weeping willow
 Salix britzensis - Coralbark willow
 Salix caprea - Goat willow
 Salix cinerea - Grey willow
 Salix coerulea - Cricket bat willow
 Salix daphnoides - Violet willow
+Salix elaeagnos - Hoary willow
 Salix fragilis - Crack willow
 Salix lanata - Woolly willow
 Salix lapponum - Downy willow
@@ -669,15 +737,20 @@ Salix myrsinites - Whortle-leaved willow
 Salix pentandra - Bay willow
 Salix phylicifolia - Tea-leaved willow
 Salix purpurea - Purple willow
+Salix repens - Creeping willow
 Salix reticulata - Net-leaved willow
 Salix spp. - Willow
 Salix triandra - Almond willow
 Salix viminalis - Osier
 Salix x sepulcralis - Weeping golden willow
+Salvia officinalis - Sage
+Salvia rosmarinus - Rosemary
 Sambucas nigra - Black elder
 Sambucas racemosa - European red elder
 Sambucus nigra - Elder
+Sambucus racemosa - Red-berried elder
 Sambucus sp. - Elder species
+Santolina chamaecyparissus - Cotton lavender
 Sassafras albidum - Sassafras
 Saxegothaea conspicua - Prince alberts yew
 Sequoia sempervirens - Coast redwood
@@ -689,6 +762,7 @@ Sorbus aria - Whitebeam
 Sorbus aucuparia 'Joseph Rock' - Sorbus 'Joseph Rock'
 Sorbus aucuparia - Rowan
 Sorbus cashmiriana - Kashmir rowan
+Sorbus chamaemespilus - False medlar
 Sorbus commixta - Japanese rowan
 Sorbus commixta embley - Chinese scarlet rowan
 Sorbus cuspidata - Himalayan whitebeam
@@ -704,8 +778,11 @@ Sorbus thuringiaca 'Fastigiata' - Bastard service tree 'Fastigiata'
 Sorbus thuringiaca - Bastard service tree
 Sorbus torminalis - Wild service tree
 Sorbus vilmorinii - Vilmorin's rowan
+Spartium junceum - Spanish broom
+Spiraea salicifolia - Bridewort
 Staphylea colchica - Colchis bladdernut
 Staphylea holocarpa 'Rosea' - Bladdernut
+Staphylea pinnata - Bladdernut
 Stuartia pseudocamellia - Deciduous camellia
 Stuartia sinensis - Chinese stuartia
 Styphnolobium japonica - Scholars tree
@@ -716,6 +793,7 @@ Syringa sp. - Lilac
 Syringa vulgaris 'Alba' - White flowering common lilac
 Syringa vulgaris - Common lilac
 Tamarix - Tamarisk
+Tamarix gallica - Tamarisk
 Taxodium ascendens - Pond cypress
 Taxodium distichum 'Swamp' - Swamp cypress
 Taxodium distichum - Deciduous cypress
@@ -727,6 +805,7 @@ Taxus sp. - Yew
 Tetracentron sinense - Spur leaf
 Tetradium danielli - Bee bee tree
 Tetradium daniellii - Tetradium
+Teucrium fruticans - Tree germander
 Thuja koraiensis - Korean thuja
 Thuja occidentalis - White cedar
 Thuja orientalis - Chinese arbor-vitae
@@ -762,6 +841,8 @@ Tsuga mertensiana - Mountain hemlock
 Tsuga sieboldii - Southern Japanese hemlock
 Tsuga sp. - Hemlock
 Ulex europaeus - Gorse
+Ulex gallii - Western gorse
+Ulex minor - Dwarf gorse
 Ulmus 'New Horizon' - New Horizon Elm
 Ulmus americana - American elm
 Ulmus carpinifolia - Smooth leafed elm
@@ -777,15 +858,15 @@ Ulmus pumila - Siberian elm
 Ulmus sarniensis - Wheatley elm
 Ulmus spp. - Elm
 Ulmus x hollandica 'Vegeta' - Huntingdon elm
+Vaccinium myrtillus - Bilberry
+Vaccinium vitis-idaea - Cowberry
 Viburnum lantana - Wayfaring tree
 Viburnum opulus - Guelder rose
 Viburnum sp. - Viburnum
 Viburnum tinus - Laurustinus
+Vitex agnus-castus - Chaste tree
 Wisteria floribunda - Japanese wisteria
 Wisteria sinensis - Wisteria
-X Cupressocyparis leylandii 'Green Spire' - Leyland cypress 'Green Spire'
-X Cupressocyparis leylandii 'Haggerston Grey' - Leyland cypress 'Haggerston Grey'
-X Cuprocyparis leylandii - Leyland cypress
 Zelkova carpinifolia - Caucasian elm
 Zelkova serrata - Japanese zelkova
 Zelkova sinica - Chinese zelkova
@@ -793,4 +874,7 @@ Zelkova sp. - Zelkova
 Zelkova verschaffeltii - Cutleaf zelkova
 Mixed broadleaves - Mixed broadleaves
 Mixed conifers - Mixed conifers
-Mixed species - Mixed species`.split("\n");
+Mixed species - Mixed species
+Mixed hedge - Mixed hedge
+Mixed native hedge - Mixed native hedge
+Mixed shrubs - Mixed shrubs`.split("\n");

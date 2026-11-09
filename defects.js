@@ -275,3 +275,66 @@ function fungusInfo(f) {
   return `<b>${esc(f.com)}</b> <i>${esc(f.sci)}</i> – <span class="sig ${SIG_CLASS[f.sig] || ""}">${esc(f.sig)}</span><br>
     ${esc(f.decay)} · ${esc(f.life)}<br><span class="meta">${esc(f.note)}</span>`;
 }
+
+// ---------------------------------------------------------------- pests & diseases picker (insects, mammals, diseases other than decay fungi)
+function pestList() {
+  const fromFungi = FUNGI.filter(f => f.g === "Disease").map(f => ({ g: "Diseases", com: f.com, sci: f.sci, hosts: f.hosts, where: f.where,
+    effect: f.decay, sig: f.sig, report: "", part: f.part, note: f.note }));
+  return PESTS.concat(fromFungi.filter(f => !PESTS.some(p => p.sci === f.sci)));
+}
+function pestSheet(species, onPick) {
+  const keys = hostKeywords(species), all = pestList();
+  const likely = f => keys.some(k => f.hosts.toLowerCase().includes(k) || (k === "conifer" && /conifer|pine/i.test(f.hosts)));
+  let group = "", q = "";
+  const back = document.createElement("div");
+  back.className = "sheet-back";
+  back.innerHTML = `<div class="sheet" role="dialog" aria-label="Pests and diseases">
+    <div class="grip"></div>
+    <input id="pd_q" type="search" placeholder="Search – name, host or sign (e.g. processionary, oak, bleeding)" autocomplete="off">
+    <div class="chips" id="pd_g">${["", "Insects", "Mammals", "Diseases", "Report"].map(g => `<button class="chip ${g ? "" : "on"}" data-v="${g}">${g === "Report" ? "To report" : g || "All"}</button>`).join("")}</div>
+    <div id="pd_list" class="fglist"></div>
+    <div class="sheet-foot"><div class="row"><button class="btn" id="pd_cancel">Cancel</button></div></div>
+  </div>`;
+  document.body.appendChild(back);
+  const $s = sel => back.querySelector(sel);
+  const draw = () => {
+    const qq = q.toLowerCase();
+    const list = all.filter(f => (!group || (group === "Report" ? !!f.report : f.g === group)) &&
+      (!qq || [f.com, f.sci, f.hosts, f.where, f.effect].join(" ").toLowerCase().includes(qq)));
+    const a = list.filter(likely), b = list.filter(f => !likely(f));
+    const item = f => `<button class="fgitem" data-sci="${esc(f.sci)}">
+        <span class="fgname">${esc(f.com)} <i>${esc(f.sci)}</i></span>
+        <span class="sig ${SIG_CLASS[f.sig] || ""}">${esc(f.sig)}</span>
+        <span class="meta">${esc(f.g)}${f.report ? ` · <b>${esc(/notifiable/i.test(f.report) ? "Notifiable" : "Report")}</b>` : ""} · ${esc(f.hosts)}</span></button>`;
+    $s("#pd_list").innerHTML =
+      (a.length && keys.length ? `<div class="fghead">Known on ${esc(common(species) || "this species")}</div>` + a.map(item).join("") +
+        (b.length ? `<div class="fghead">Others</div>` : "") : "") +
+      (a.length && keys.length ? b : list).map(item).join("") ||
+      `<div class="empty">Nothing matches “${esc(q)}”.</div>`;
+  };
+  $s("#pd_q").oninput = e => { q = e.target.value.trim(); draw(); };
+  $s("#pd_g").onclick = e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    group = b.dataset.v; $s("#pd_g").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); draw();
+  };
+  $s("#pd_list").onclick = e => {
+    const b = e.target.closest(".fgitem"); if (!b) return;
+    const f = all.find(x => x.sci === b.dataset.sci); back.remove(); onPick(f);
+  };
+  $s("#pd_cancel").onclick = () => back.remove();
+  back.addEventListener("click", e => { if (e.target === back) back.remove(); });
+  draw();
+}
+// "Signs of oak processionary moth (Thaumetopoea processionea)" / "Symptoms of acute oak decline (Brenneria goodwinii …)"
+function pestPhrase(f) {
+  const sci = f.sci.replace(/\s*\((bacterium|oomycete|bacteria)\)/g, "").replace(/\s+and others$/, "");
+  const com = f.com.split("/")[0].trim();
+  const lc = /^[A-Z][a-z]/.test(com) && !/^[A-Z]{2}/.test(com) ? com.charAt(0).toLowerCase() + com.slice(1) : com;
+  if (/^Several causes/.test(sci)) return `Symptoms of ${lc}`;
+  if (sci.toLowerCase().startsWith(com.toLowerCase())) return `Symptoms of ${sci}`;
+  return f.g === "Diseases" ? `Symptoms of ${lc} (${sci})` : `Signs of ${lc} (${sci})`;
+}
+function pestInfo(f) {
+  return `<b>${esc(f.com)}</b> <i>${esc(f.sci)}</i> – <span class="sig ${SIG_CLASS[f.sig] || ""}">${esc(f.sig)}</span>
+    ${f.report ? `<br><b>${esc(f.report)}</b>` : ""}<br>${esc(f.where)}<br>${esc(f.effect)}${f.note ? `<br><span class="meta">${esc(f.note)}</span>` : ""}`;
+}
