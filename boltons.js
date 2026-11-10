@@ -200,6 +200,15 @@ const PROP_PART = ["House", "Extension", "Garage", "Conservatory", "Outbuilding"
 const PROP_OWNER = ["Client's", "Neighbour's", "Council / highway", "Unknown"];
 const PROP_DIRECT = ["Roots lifting paving", "Stem / roots against a wall", "Branches touching the building", "Roots near drains", "Debris in gutters", "Overhanging the roof"];
 const PROP_IMPL = ["Implicated", "Possibly implicated", "Not implicated"];
+const PROP_FORM = ["Detached house", "Semi-detached house", "End-terrace house", "Mid-terrace house", "Detached bungalow", "Semi-detached bungalow",
+  "Flats / maisonettes", "Detached garage / outbuilding", "Commercial"];
+const PROP_STRUCT = ["Main building", "Extension", "Conservatory", "Garage", "Porch / bay", "Outbuilding", "Boundary / garden wall", "Paving / drive", "Drains"];
+const PROP_CHANGES = ["None known", "Trees / hedges removed", "New planting", "Extension / building work", "Drainage work", "Leak / burst pipe",
+  "New paving", "Ground levels changed", "Underpinning"];
+const PROP_TOPO = ["Level", "Gentle slope", "Moderate slope", "Steep slope"];
+const PROP_SLOPE = ["Falls towards the building", "Falls away from it", "Falls across it"];
+const PROP_FEATS = ["Retaining wall", "Cut-and-fill / terraced", "Bank / embankment", "Watercourse / pond nearby", "Made ground suspected",
+  "Building higher than the trees", "Building lower than the trees"];
 const PROP_PROTECT = ["TPO", "Conservation area", "Not protected", "Not checked"];
 const PROP_EVIDENCE = ["Engineer's report", "Site investigation", "Root identification", "Level monitoring", "Crack monitoring", "Drain survey", "Repair proposal"];
 function propInfluence(t) {
@@ -425,10 +434,21 @@ function boltDetails(job, s) {
         <label>Report for</label>${chips("purpose", ["Mortgage", "Subsidence"], pr.purpose, false, false)}
         <div class="grid2"><div><label for="pr_party">${pr.purpose === "Subsidence" ? "Insurer / loss adjuster" : "Lender / surveyor"}</label><input id="pr_party" data-bin="party" value="${esc(pr.party || "")}"></div>
           <div><label for="pr_ref">${pr.purpose === "Subsidence" ? "Claim reference" : "Application / report ref"}</label><input id="pr_ref" data-bin="ref" value="${esc(pr.ref || "")}"></div></div>
-        <label for="pr_build">Building (type, age, construction)</label><input id="pr_build" data-bin="building" placeholder="e.g. 1930s semi-detached, brick, rear extension 2005" value="${esc(pr.building || "")}">
+        <label>Building</label>${chips("form", PROP_FORM, pr.form)}
+        <div class="grid2"><div><label>Storeys</label>${chips("storeys", ["1", "1½", "2", "3", "4+"], pr.storeys)}</div>
+          <div><label for="pr_built">Built (year or era)</label><input id="pr_built" data-bin="built" placeholder="e.g. 1935, 1960s, Victorian" value="${esc(pr.built || "")}"></div></div>
+        <label for="pr_build">Construction / notes</label><input id="pr_build" data-bin="building" placeholder="e.g. brick cavity walls, tiled roof" value="${esc(pr.building || "")}">
+        <label for="pr_exts">Extensions, conservatories, garages (what, where, year)</label><input id="pr_exts" data-bin="exts" placeholder="e.g. rear extension 2005; conservatory 2015; detached garage 1970s" value="${esc(pr.exts || "")}">
+        <label>Site topography</label>${chips("topo", PROP_TOPO, pr.topo)}
+        ${pr.topo && pr.topo !== "Level" ? `<label>The slope</label>${chips("slope", PROP_SLOPE, pr.slope)}` : ""}
+        <label>Site features</label>${chips("feats", PROP_FEATS, pr.feats, true)}
+        <label for="pr_topo">Topography notes</label><input id="pr_topo" data-bin="topoNote" placeholder="e.g. garden 1 m below the house, falls to the south" value="${esc(pr.topoNote || "")}">
         <label for="pr_soil">Soil (if known)</label><input id="pr_soil" data-bin="soil" placeholder="e.g. boulder clay (BGS map)" value="${esc(pr.soil || "")}">
         <label for="pr_damage">Damage seen (cracks: where, width, direction)</label><textarea id="pr_damage" data-bin="damage" rows="2">${esc(pr.damage || "")}</textarea>
-        ${pr.purpose === "Subsidence" ? `<label>Damage category (BRE Digest 251)</label>${chips("bre", ["0", "1", "2", "3", "4", "5"], pr.bre)}
+        ${pr.purpose === "Subsidence" ? `<label>Damage is to</label>${chips("struct", PROP_STRUCT, pr.struct, true)}
+        <label>Damage category (BRE Digest 251)</label>${chips("bre", ["0", "1", "2", "3", "4", "5"], pr.bre)}
+        <label>Recent changes (ask the owner)</label>${chips("changes", PROP_CHANGES, pr.changes, true)}
+        <label for="pr_chg">When / details</label><input id="pr_chg" data-bin="changesNote" placeholder="e.g. neighbour's willow felled spring 2025; drains relined 2024" value="${esc(pr.changesNote || "")}">
         <label for="pr_la">Local planning authority</label><input id="pr_la" data-bin="la" placeholder="for TPO / conservation area trees" value="${esc(pr.la || "")}">
         <label>Evidence available so far</label>${chips("evidence", PROP_EVIDENCE, pr.evidence, true)}
         <div class="hint">Type the details in on the PC: Bolt-on reports → Subsidence evidence sheets. The report is written from whatever there is.</div>` : ""}
@@ -443,7 +463,7 @@ function boltDetails(job, s) {
       ${bo.bng ? `<div class="card"><h3 class="subhead">BNG</h3><label>Trees are mostly</label>${chips("bngSetting", ["Urban", "Rural"], job.bngSetting || "Urban")}
         <div class="grid2"><div><label for="siteHa">Site area (ha)</label><input id="siteHa" inputmode="decimal" value="${esc(job.siteHa || "")}"></div><div></div></div>
         <div class="hint" id="haNote"></div></div>` : ""}`;
-    bindSub(document.getElementById("propcard"), () => pr, () => { }, k => { if (k === "purpose") draw(); });
+    bindSub(document.getElementById("propcard"), () => pr, () => { }, k => { if (k === "purpose" || k === "topo") draw(); });
     bindSub(document.getElementById("estcard"), () => (job.estab = job.estab || {}), () => { });
     const bc = document.getElementById("boltChips");
     if (bc) bc.onclick = e => { const b = e.target.closest(".chip"); if (!b) return; e.preventDefault(); bo[b.dataset.v] = !bo[b.dataset.v]; draw(); };
