@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Route Notes</title>
+<meta name="author" content="Mark Johnson">
+<meta name="copyright" content="© 2026 Mark Johnson. All rights reserved.">
+<meta name="description" content="Daily site notes for highway tree surveys – route, from and to, species, defects, access and photos, saved as a PDF. Works offline.">
+<meta name="theme-color" content="#101f16">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<input type="file" id="gallery" accept="image/*" multiple hidden>
+<script src="osgb.js"></script>
+<script src="shell.js"></script>
+<script src="routenotes.js"></script>
+<script src="start.js"></script>
+</body>
+</html>

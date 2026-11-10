@@ -178,7 +178,7 @@ async function routeNotesPage() {
       <p class="hint" id="rn_${k}_chk">${rnChk(n, k)}</p>`).join("")}
       <label>Team</label>
       <div class="chips" id="rn_team"><button class="chip ${n.team === "lone" ? "on" : ""}" data-v="lone">Lone working</button><button class="chip ${n.team === "pair" ? "on" : ""}" data-v="pair">With colleague</button></div>
-      ${n.team === "pair" ? `<label for="rn_col">Colleague / company (optional)</label><input id="rn_col" value="${esc(n.col)}" placeholder="e.g. Acorn">` : ""}
+      ${n.team === "pair" ? `<label for="rn_col">Colleague / company (optional)</label><input id="rn_col" value="${esc(n.col)}" placeholder="e.g. their company">` : ""}
       <h2>Species</h2><p class="hint">Tap once = standard stock · twice = occasional · again to clear.</p>
       <div class="chips">${chips("species")}</div>
       <div class="row"><input id="rn_add_species" placeholder="Add another species"><button class="btn small" data-add="species">Add</button></div>
