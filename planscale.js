@@ -237,7 +237,8 @@ function drawLayers(map, job, overlays) {
     const col = ntm ? "#4E8A4A" : LAYER_COLS[i % LAYER_COLS.length];
     const g = L.geoJSON(lay.geojson, {
       attribution: esc(lay.credit || ""),
-      style: () => ntm ? ({ color: col, weight: 1, fillColor: "#8FB98B", fillOpacity: 0.25 }) : ({ color: col, weight: 2, fillOpacity: 0.08 }),
+      style: f => { const own = f && f.properties && /^#[0-9a-f]{6}$/i.test(f.properties.colour || "") ? f.properties.colour : "";   // usage zones carry their band's colour
+        return ntm ? ({ color: col, weight: 1, fillColor: "#8FB98B", fillOpacity: 0.25 }) : own ? ({ color: own, weight: 2, fillColor: own, fillOpacity: 0.28 }) : ({ color: col, weight: 2, fillOpacity: 0.08 }); },
       pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: "#fff", weight: 1.5, fillColor: col, fillOpacity: 1 }),
       onEachFeature: (f, l) => { const n = featName(f.properties); if (n) l.bindTooltip(esc(n), { sticky: true, className: "tlabel" }); },
       interactive: true,

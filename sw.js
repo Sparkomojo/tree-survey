@@ -1,7 +1,7 @@
 // Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
 // Offline cache: the app works with no signal once it has been opened once.
 // Bump VERSION whenever any file changes so phones pick up the update.
-const VERSION = "tree-survey-v1.38";
+const VERSION = "tree-survey-v1.39";
 const FILES = ["./", "index.html", "app.css", "app.js", "species.js", "osgb.js", "manifest.webmanifest",
   "lib/jszip.min.js", "lib/xlsx.mini.min.js", "lib/leaflet.js", "lib/leaflet.css", "lib/Leaflet.ImageOverlay.Rotated.js", "map.js", "planscale.js", "defects.js", "works.js", "vet.js", "safety.js", "checklists.js", "checks.js", "laser.js", "boltons.js", "contractor.js", "resources.js", "quote.js", "routenotes.js", "lib/jspdf.umd.min.js", "fungi.js", "pests.js", "qtra.js", "threats.js", "cavat_cti.js", "cavat.js",
   "lib/images/layers.png", "lib/images/layers-2x.png", "lib/images/marker-icon.png", "lib/images/marker-icon-2x.png", "lib/images/marker-shadow.png", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png",
