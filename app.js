@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.40";
+const APP_VERSION = "1.41";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -46,7 +46,7 @@ const DEFAULT_PHRASES = {
 const LIFE = ["Y", "SM", "EM", "M", "OM", "V"], COND = ["Good", "Fair", "Poor", "Dead"], STRUCT = ["Good", "Fair", "Poor"];
 const RISK_METHODS = ["VALID", "QTRA", "THREATS", "CAVAT"];
 // land ownership; linear routes (road, railway, footpath): which side / direction each tree is on, in the direction of travel
-const OWNERSHIP = ["Client", "Third party", "Not known"];
+const OWNERSHIP = ["Client", "Third party", "Unclear", "Not known"];   // Unclear: seen, but can't tell whose (boundary, no fence, disputed)
 const routeDirs = job => { const r = job.route || {}; const a = r.from || "start", b = r.to || "end";
   return [r.dir1 || `${a} to ${b}`, r.dir2 || `${b} to ${a}`, "Central reserve"]; };
 const riskMethods = job => job.riskMethods || (roadside(job) ? ["VALID"] : ["VALID", "QTRA"]);
@@ -553,7 +553,9 @@ async function treePage(jobId, treeId) {
     ${job.route ? `<label>Direction / side of the route</label>${pick("direction", routeDirs(job))}
       <div class="grid2">${f("markerPost", "Marker post / chainage", 'placeholder="e.g. 123/4" autocomplete="off"')}<div></div></div>` : ""}
     ${job.type === "AMR" || bs ? `<label>Land ownership</label>${pick("ownership", OWNERSHIP)}
-      <div id="ownWrap" ${t.ownership === "Third party" ? "" : "hidden"}>${f("landowner", "Landowner / property (if known)", 'placeholder="e.g. Mill Farm, or 12 Station Road" autocomplete="off"')}
+      <div id="ownNoteWrap" ${t.ownership === "Unclear" || t.ownership === "Not known" ? "" : "hidden"}>${f("ownershipNote", "Why it's unclear", 'placeholder="e.g. on the boundary line, no fence; either side could own it" autocomplete="off"')}
+        <div class="hint">Works for a single tree, a group or a woodland. The report lists these as ownership to confirm before work is arranged.</div></div>
+      <div id="ownWrap" ${t.ownership === "Third party" || t.ownership === "Unclear" ? "" : "hidden"}>${f("landowner", "Landowner / property (if known)", 'placeholder="e.g. Mill Farm, or 12 Station Road" autocomplete="off"')}
         <div class="hint">Trees on third-party land get a letter to the owner (Third-party trees on the PC). Name the property or owner if you can – trees with the same name share a letter.</div></div>` : ""}
     <details class="more" id="lineBox" ${t.end || /^(G|H|TG|W)/i.test(t.tag || "") ? "open" : ""}><summary>Hedge / group as a line (start and end)</summary>
       <div class="hint">The location above is the <b>start</b>. Walk to the other end and record the <b>end</b>; add a bend wherever it changes direction. The plan draws it as a band its crown-spread wide.</div>
@@ -792,7 +794,8 @@ async function treePage(jobId, treeId) {
     const k = g.dataset.pick, v = b.dataset.v;
     t[k] = t[k] === v ? "" : v;
     g.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.v === t[k]));
-    if (k === "ownership" && $("#ownWrap")) $("#ownWrap").hidden = t.ownership !== "Third party";
+    if (k === "ownership" && $("#ownWrap")) { $("#ownWrap").hidden = !["Third party", "Unclear"].includes(t.ownership);
+      $("#ownNoteWrap").hidden = !["Unclear", "Not known"].includes(t.ownership); }
     touch();
   });
   bindAppendChips();
@@ -1256,7 +1259,7 @@ async function buildZip(jobId) {
   const withRoute = !!job.route || trees.some(t => t.direction || t.markerPost);
   const withOwn = trees.some(t => t.ownership || t.landowner);
   const extraHead = (withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
-  const extra = t => (withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [t.ownership || "", t.landowner || ""] : []);
+  const extra = t => (withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []);
   const head0 = bs ? BS_HEAD : AMR_HEAD.map(h => h === "Crown Spread (m)" ? crownHead(job) : h).concat(withRisk ? RISK_HEAD : [], withCavat ? ["CAVAT (£)"] : [], withChange ? ["Change Since Last Survey"] : [], withZone ? ["Zone"] : [], withVet ? ["Veteran Features"] : [], withLine ? ["End Grid Ref", "End Latitude", "End Longitude"] : []);
   const head = head0.concat(extraHead);
   const ws = XLSX.utils.aoa_to_sheet([head, ...trees.map(t => treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, withLine).concat(extra(t)))]);
