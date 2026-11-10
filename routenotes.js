@@ -1,5 +1,7 @@
 // Tree Survey – © 2026 Mark Johnson. All rights reserved. Use only under a written licence from the owner.
-/* Route notes – the daily site note for highway route surveys (EM / WM network): date, route, what3words, distance,
+/* Route notes – the daily site note for highway route surveys (EM / WM network): date, route, From and To (what3words and
+   6-figure grid reference, e.g. "///retail.garage.unhappily SP613644" – typed or pasted; 📍 Here fills the grid reference from
+   GPS, and the what3words address too when a what3words key is set in Settings), distance,
    team, species (tap once = standard stock, twice = occasional), defects and access in your usual sentences, extra
    notes, any number of photos with captions. Save PDF makes "Site_Notes_DD_MM_YYYY_<route>.pdf": the text page, then the
    photos four to a page (2 × 2), each with its number and caption.
@@ -42,11 +44,13 @@ const RN_ACCESS = [
   ["Weather", "Weather conditions limited survey time."],
 ];
 
-function rnBlank() { return { date: today(), site: "", w3w: "", dist: "", team: "lone", col: "", species: {}, defects: {}, access: {},
+function rnBlank() { return { date: today(), site: "", from: "", to: "", fromGrid: "", toGrid: "", dist: "", team: "lone", col: "", species: {}, defects: {}, access: {},
   obsExtra: "", conExtra: "", photos: [], custom: { species: [], defects: [], access: [] }, sites: [] }; }
 async function rnLoad() {
   const st = await settings(); st.routeNotes = Object.assign(rnBlank(), st.routeNotes || {});
   st.routeNotes.photos = (st.routeNotes.photos || []).filter(Boolean);   // older notes kept 3 fixed slots
+  if (st.routeNotes.w3w && !st.routeNotes.from) st.routeNotes.from = st.routeNotes.w3w;   // up to v1.35: one what3words box
+  delete st.routeNotes.w3w;
   return st;
 }
 
@@ -76,9 +80,46 @@ function rnCon(n) {
   if (n.conExtra.trim()) parts.push(n.conExtra.trim());
   return parts.join(" ");
 }
+// what3words address from whatever was typed or pasted: "///a.b.c", "https://w3w.co/a.b.c", "what3words.com/a.b.c", "A.B.C"
+function rnW3W(v) {
+  return String(v || "").trim().replace(/^https?:\/\//i, "").replace(/^(www\.)?(w3w\.co|what3words\.com|map\.what3words\.com)\//i, "")
+    .replace(/^\/+/, "").replace(/[\s/]+$/, "").toLowerCase();
+}
+const rnW3Wok = v => /^\p{L}+\.\p{L}+\.\p{L}+$/u.test(rnW3W(v));
+const rnW3Wtxt = v => rnW3W(v) ? "///" + rnW3W(v) : "";
+const rnGrid = v => String(v || "").toUpperCase().replace(/\s+/g, "");
+const rnGridOk = v => !rnGrid(v) || !!OSGB.parse(rnGrid(v));
+const rnPoint = (n, k) => [rnW3Wtxt(n[k]), rnGrid(n[k + "Grid"])].filter(Boolean).join(" ");
+// what3words address -> 6-figure grid reference (needs the key and signal; quietly does nothing otherwise)
+async function rnGridFromW3W(words) {
+  const key = ((await settings()).w3wKey || "").trim();
+  if (!key || !rnW3Wok(words)) return "";
+  try {
+    const r = await fetch(`https://api.what3words.com/v3/convert-to-coordinates?words=${encodeURIComponent(rnW3W(words))}&format=json&key=${encodeURIComponent(key)}`);
+    const j = await r.json();
+    return j.coordinates ? rnGrid(OSGB.fromLatLon(j.coordinates.lat, j.coordinates.lng, 6).ref) : "";
+  } catch (e) { return ""; }
+}
+function rnChk(n, k) {
+  return [n[k] && !rnW3Wok(n[k]) ? "⚠ A what3words address is three words with dots between them." : "",
+          !rnGridOk(n[k + "Grid"]) ? "⚠ Grid reference: two letters and an even number of figures, e.g. SP613644." : ""].filter(Boolean).join(" ");
+}
+async function rnHere() {
+  const st = await settings(), key = (st.w3wKey || "").trim();
+  const pos = await new Promise((ok, bad) => navigator.geolocation ? navigator.geolocation.getCurrentPosition(p => ok(p.coords),
+    () => bad(new Error("No GPS fix – check location is on for the app.")), { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 })
+    : bad(new Error("This phone has no GPS.")));
+  const grid = rnGrid(OSGB.fromLatLon(pos.latitude, pos.longitude, 6).ref);
+  if (!key) return { grid, acc: pos.accuracy, note: "Grid reference from GPS. Add a what3words key in Settings to fill the words too – or paste them from the what3words app." };
+  const url = `https://api.what3words.com/v3/convert-to-3wa?coordinates=${pos.latitude.toFixed(6)},${pos.longitude.toFixed(6)}&language=en&format=json&key=${encodeURIComponent(key)}`;
+  let r;
+  try { r = await fetch(url); } catch (e) { return { grid, acc: pos.accuracy, note: "Grid reference from GPS. No signal for what3words – type or paste the words." }; }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.words) return { grid, acc: pos.accuracy, note: "Grid reference from GPS. what3words: " + ((j.error && j.error.message) || `error ${r.status}`) };
+  return { words: j.words, grid, acc: pos.accuracy };
+}
 function rnLines(n) {
-  const w = n.w3w.trim().replace(/^\/+/, "");
-  return [["Date", ukDate(n.date)], ["Site", n.site.trim()], ["W3W", w ? "///" + w : ""], ["Distance", n.dist ? n.dist + "km" : ""],
+  return [["Date", ukDate(n.date)], ["Site", n.site.trim()], ["From", rnPoint(n, "from")], ["To", rnPoint(n, "to")], ["Distance", n.dist ? n.dist + "km" : ""],
     ["Observations", rnObs(n)], ["Constraints", rnCon(n)]];
 }
 function rnFile(n) {
@@ -130,7 +171,11 @@ async function routeNotesPage() {
         <div><label for="rn_dist">Distance (km)</label><input id="rn_dist" type="number" inputmode="decimal" step="0.5" min="0" value="${esc(n.dist)}"></div></div>
       <label for="rn_site">Site / route</label><input id="rn_site" list="rn_sites" value="${esc(n.site)}" placeholder="e.g. A5 NB & SB from Old Stratford Rbt.">
       <datalist id="rn_sites">${(n.sites || []).map(s => `<option value="${esc(s)}">`).join("")}</datalist>
-      <label for="rn_w3w">what3words</label><input id="rn_w3w" value="${esc(n.w3w)}" placeholder="word.word.word" autocapitalize="off">
+      ${["from", "to"].map(k => `<label for="rn_${k}">${k === "from" ? "From" : "To"} – what3words and grid reference</label>
+      <input id="rn_${k}" value="${esc(n[k] || "")}" placeholder="///word.word.word" autocapitalize="none" autocomplete="off" spellcheck="false">
+      <div class="row" style="flex-wrap:nowrap;margin-top:6px"><input id="rn_${k}Grid" aria-label="${k === "from" ? "From" : "To"} grid reference" value="${esc(n[k + "Grid"] || "")}" placeholder="Grid ref, e.g. SP613644" autocapitalize="characters" autocomplete="off" spellcheck="false" style="flex:1;min-width:0">
+        <button class="btn small" style="flex:none;width:auto;white-space:nowrap" data-here="${k}" aria-label="${k === "from" ? "From" : "To"}: here">📍 Here</button></div>
+      <p class="hint" id="rn_${k}_chk">${rnChk(n, k)}</p>`).join("")}
       <label>Team</label>
       <div class="chips" id="rn_team"><button class="chip ${n.team === "lone" ? "on" : ""}" data-v="lone">Lone working</button><button class="chip ${n.team === "pair" ? "on" : ""}" data-v="pair">With colleague</button></div>
       ${n.team === "pair" ? `<label for="rn_col">Colleague / company (optional)</label><input id="rn_col" value="${esc(n.col)}" placeholder="e.g. Acorn">` : ""}
@@ -155,7 +200,30 @@ async function routeNotesPage() {
     const prev = () => { $("#rn_prev").textContent = "Site Notes\n\n" + rnLines(n).map(([k, v]) => `${k}: ${v}`).join("\n\n"); };
     prev();
     const bind = (id, k) => $(id).oninput = e => { n[k] = e.target.value; prev(); save(); };
-    bind("#rn_date", "date"); bind("#rn_dist", "dist"); bind("#rn_site", "site"); bind("#rn_w3w", "w3w"); bind("#rn_obs", "obsExtra"); bind("#rn_con", "conExtra");
+    bind("#rn_date", "date"); bind("#rn_dist", "dist"); bind("#rn_site", "site");
+    ["from", "to"].forEach(k => {
+      const inp = $("#rn_" + k);
+      inp.oninput = () => { n[k] = inp.value; prev(); save(); };
+      inp.onchange = async () => {
+        if (rnW3W(inp.value)) inp.value = n[k] = rnW3W(inp.value);
+        $("#rn_" + k + "_chk").textContent = rnChk(n, k); prev(); save();
+        if (rnW3Wok(n[k]) && !rnGrid(n[k + "Grid"])) {           // fill the grid reference from the words when we can
+          const g = await rnGridFromW3W(n[k]);
+          if (g && !rnGrid(n[k + "Grid"])) { n[k + "Grid"] = g; $("#rn_" + k + "Grid").value = g; prev(); save(); }
+        }
+      };
+      const gi = $("#rn_" + k + "Grid");
+      gi.oninput = () => { n[k + "Grid"] = gi.value; prev(); save(); };
+      gi.onchange = () => { gi.value = n[k + "Grid"] = rnGrid(gi.value); $("#rn_" + k + "_chk").textContent = rnChk(n, k); prev(); save(); };
+    });
+    app.querySelectorAll("[data-here]").forEach(b => b.onclick = async () => {
+      const k = b.dataset.here; b.disabled = true; b.textContent = "…";
+      try {
+        const r = await rnHere(); n[k + "Grid"] = r.grid; if (r.words) n[k] = r.words; await save(); draw();
+        toast(`${k === "from" ? "From" : "To"}: ${rnPoint(n, k)}` + (r.acc > 30 ? ` (GPS ±${Math.round(r.acc)} m – check it)` : "") +
+              (r.note ? ". " + r.note : ""), r.note ? 7000 : 4000);
+      } catch (e) { b.disabled = false; b.textContent = "📍 Here"; toast(e.message, 6000); }
+    }); bind("#rn_obs", "obsExtra"); bind("#rn_con", "conExtra");
     if ($("#rn_col")) bind("#rn_col", "col");
     $("#rn_team").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; n.team = b.dataset.v; save(); draw(); };
     app.querySelectorAll("[data-k]").forEach(b => b.onclick = () => {
@@ -185,8 +253,8 @@ async function routeNotesPage() {
     $("#rn_cam").onclick = () => pickFiles("#cam", addPhotos);
     $("#rn_gal").onclick = () => pickFiles("#gallery", addPhotos);
     $("#rn_new").onclick = async () => {
-      if (!confirm("Start a new day? The route, team and species are kept; the date, what3words, distance, notes and photos are cleared.")) return;
-      Object.assign(n, { date: today(), w3w: "", dist: "", obsExtra: "", conExtra: "", photos: [] });
+      if (!confirm("Start a new day? The route, team and species are kept, and yesterday's To becomes today's From; the date, distance, notes and photos are cleared.")) return;
+      Object.assign(n, { date: today(), from: n.to || "", fromGrid: n.toGrid || "", to: "", toGrid: "", dist: "", obsExtra: "", conExtra: "", photos: [] });
       await save(); draw(); window.scrollTo(0, 0); toast("Ready for a new day");
     };
     $("#rn_pdf").onclick = async () => {

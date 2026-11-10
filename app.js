@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.35";
+const APP_VERSION = "1.36";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -1156,6 +1156,9 @@ async function settingsPage() {
     <label for="batLicence">Natural England bat licence number (if you hold one)</label><input id="batLicence" value="${esc(s.batLicence || "")}">
     <label class="check"><input type="checkbox" id="batEndoscope" ${s.batEndoscope ? "checked" : ""}> I've done the BCT endoscope training for arborists (Secondary Roost Surveys) and work to the BCT method statement</label>
     <p class="hint">This sets what the bat checks let you do. With neither, they keep you on the ground. The training certificates recommend a refresher within 5 years.</p>
+    <h2>what3words</h2>
+    <label for="w3wKey">what3words API key (optional)</label><input id="w3wKey" value="${esc(s.w3wKey || "")}" autocapitalize="none" autocomplete="off" spellcheck="false">
+    <p class="hint">Lets 📍 Here in route notes fill the what3words address from GPS (the grid reference is filled without it), and fills the grid reference from a typed address. It stays on this phone and uses your what3words plan's allowance. Without it, type or paste the address from the what3words app.</p>
     <h2>Quick phrases</h2>
     <label class="check"><input type="checkbox" id="askDetails" ${s.askDetails !== false ? "checked" : ""}> Ask for position, size and direction when I tap an observation</label>
     <p class="hint">These are the tap-to-add buttons under each box. Change them to your own wording.</p>
@@ -1175,6 +1178,7 @@ async function settingsPage() {
     s.qtraAssessors = $("#qtraAssessors").value.split("\n").map(x => x.trim()).filter(Boolean);
     s.batLicence = $("#batLicence").value.trim();
     s.batEndoscope = $("#batEndoscope").checked;
+    s.w3wKey = $("#w3wKey").value.trim();
     for (const k of Object.keys(DEFAULT_PHRASES)) s.phrases[k] = $("#p_" + k).value.split("\n").map(x => x.trim()).filter(Boolean);
     await DB.put("settings", s); toast("Settings saved"); go("#/");
   };
