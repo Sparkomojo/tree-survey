@@ -7,7 +7,8 @@
 
 const CHECK_ANS = [["ok", "OK"], ["defect", "Defect"], ["na", "N/A"]];
 const RESULT_TEXT = { safe: "Safe", minor: "Safe – minor defect reported", unsafe: "NOT safe – out of use / stopped" };
-const resultText = c => c.kind === "site" ? { safe: "Safe to start work", unsafe: "NOT safe – work stopped" }[c.result] || "" : RESULT_TEXT[c.result] || "";
+const resultText = c => c.kind === "lone" ? (c.late ? `Checked out – ${c.late} check-in${c.late > 1 ? "s" : ""} late` : "Checked out – every check-in on time") : c.kind === "site" ? { safe: "Safe to start work", unsafe: "NOT safe – work stopped" }[c.result] || "" : RESULT_TEXT[c.result] || "";
+const fieldParts = f => { const m = /^(.*?)\s*\[(.*)\]\s*$/.exec(f); return m ? [m[1].trim(), m[2].split("|").map(x => x.trim()).filter(Boolean)] : [f, []]; };
 const checkList = key => (typeof CHECKLISTS !== "undefined" ? CHECKLISTS : []).find(c => c.key === key);
 
 async function checksPage() {
@@ -89,7 +90,11 @@ async function checkForm(key) {
     ${cl.note ? `<p class="hint">${esc(cl.note)}</p>` : ""}
     <label for="asset">${esc(cl.asset)}</label><input id="asset" list="assets" value="${esc(rec.asset)}">
     <datalist id="assets">${assets.map(a => `<option value="${esc(a)}">`).join("")}</datalist>
-    ${cl.fields.map((f, n) => `<label for="f${n}">${esc(f)}</label><input id="f${n}" data-f="${esc(f)}" value="${esc(rec.fields[f] || "")}">`).join("")}
+    ${cl.fields.map((f0, n) => { const [f, opts] = fieldParts(f0);      // "Label [a | b]" – suggestions to tap, or type your own
+      return `<label for="f${n}">${esc(f)}</label><input id="f${n}" data-f="${esc(f)}" value="${esc(rec.fields[f] || "")}" ${opts.length ? `list="fo${n}" autocomplete="off"` : ""}>` +
+        (opts.length ? `<datalist id="fo${n}">${opts.map(o => `<option value="${esc(o)}">`).join("")}</datalist>` : "") +
+        (/^nearest a&e/i.test(f) ? `<div class="hint"><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("A&E hospital emergency department")}" target="_blank" rel="noopener">Find the nearest A&E on the map</a> (needs signal) – type the hospital here and its address below. In an emergency call 999.</div>` : "");
+    }).join("")}
     ${cl.sections.map(([sec, items]) => `<h3 class="subhead">${esc(sec)}</h3>` + items.map(() => {
       const a = rec.answers[i], n = i++;
       return `<div class="safetyrow" data-n="${n}"><div>${esc(a.item)}</div><div class="chips">
@@ -213,15 +218,15 @@ async function checkView(id) {
     }).join("")}
     ${c.notes ? `<h3 class="subhead">Notes</h3><p>${esc(c.notes)}</p>` : ""}
     ${(c.team || []).length ? `<h3 class="subhead">Team briefing</h3>${c.team.map(m => `<div class="sigline"><span>${esc(m.name)}${m.role ? ` (${esc(m.role)})` : ""}</span>${m.sig ? `<img src="${m.sig}" alt="signature">` : ""}</div>`).join("")}` : ""}
-    <h3 class="subhead">Signed</h3><div class="sigline"><span>${esc(c.by || "")}</span>${c.sig ? `<img src="${c.sig}" alt="signature">` : ""}</div>
+    <h3 class="subhead" ${c.kind === "lone" ? "hidden" : ""}>Signed</h3><div class="sigline" ${c.kind === "lone" ? "hidden" : ""}><span>${esc(c.by || "")}</span>${c.sig ? `<img src="${c.sig}" alt="signature">` : ""}</div>
     <div class="row noprint" style="margin-top:16px">
-      <button class="btn primary" id="again">Do this check again</button>
+      ${c.kind === "lone" ? "" : `<button class="btn primary" id="again">Do this check again</button>`}
       <button class="btn" id="share">Share as text</button>
       <button class="btn" onclick="window.print()">Print / PDF</button>
     </div>
     <button class="btn small danger noprint" id="del" style="margin-top:18px">Delete</button>
   </main>`;
-  $("#again").onclick = () => { sessionStorage.setItem("checkAgain", c.asset || ""); go("#/check/new/" + c.template); };
+  if ($("#again")) $("#again").onclick = () => { sessionStorage.setItem("checkAgain", c.asset || ""); go("#/check/new/" + c.template); };
   $("#share").onclick = async () => {
     const text = checkText(c);
     try { if (navigator.share) { await navigator.share({ title: c.title, text }); return; } } catch (e) { if (e.name === "AbortError") return; }

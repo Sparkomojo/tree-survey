@@ -717,6 +717,24 @@ function loneBanner(s) {
     ${late ? "⚠ Check-in overdue since" : "Next check-in by"} ${due.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} · finish ${fin.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
     <div class="row"><button class="btn small primary" onclick="go('#/lone')">Check in / out</button></div></div>`;
 }
+// each check-in, change of finish time and the check-out is logged; one that comes after it was due counts as late
+function loneEvent(a, what) {
+  const now = Date.now(), late = now > (a.nextDue || 0) + 60e3;
+  (a.events = a.events || []).push({ at: now, what, late });
+  if (late) a.late = (a.late || 0) + 1;
+}
+// the finished session as a record in the Checks list: no phone numbers, no messages – times, site and who the contact was
+function loneRecord(a, me) {
+  const t = d => new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const ev = a.events || [], ins = ev.filter(e => e.what === "Check-in").length;
+  return { id: "lw" + a.start.toString(36) + Math.random().toString(36).slice(2, 6), kind: "lone", template: "lone", title: "Lone working session",
+    assetLabel: "Site", asset: a.site || "", by: me, when: new Date().toISOString(), result: "safe", late: a.late || 0, answers: [], team: [], notes: "",
+    start: new Date(a.start).toISOString(), planned: new Date(a.planned || a.finish).toISOString(), interval: a.interval || 120, checkins: ins,
+    contact: a.contact || "", grid: a.grid || "",
+    fields: { "Started": t(a.start), "Planned finish": t(a.planned || a.finish), "Checked out": t(Date.now()), "Check-in every": `${a.interval || 120} minutes`,
+      "Check-ins sent": String(ins), "Late check-ins or check-out": String(a.late || 0), "Nominated contact": a.contact || "", "Position at start": a.grid || "",
+      "Log": ev.map(e => `${t(e.at)} ${e.what}${e.late ? " (late)" : ""}`).join("; ") } };
+}
 async function lonePage() {
   const s = await settings(), lw = s.lone || (s.lone = { name: "", phone: "", interval: 120, via: "sms" });
   const jobs = (await DB.all("jobs")).sort((a, b) => (b.updated || 0) - (a.updated || 0));
@@ -750,7 +768,8 @@ async function lonePage() {
       const [h, m] = ($("#lw_fin").value || "17:00").split(":").map(Number); const fin = new Date(); fin.setHours(h, m, 0, 0); if (fin < new Date()) fin.setDate(fin.getDate() + 1);
       toast("Getting your position…", 4000); let best = null;
       const go_ = async () => {
-        const st = { site: $("#lw_site").value.trim(), start: Date.now(), finish: fin.getTime(), nextDue: Math.min(fin.getTime(), Date.now() + lw.interval * 60e3), interval: lw.interval };
+        const st = { site: $("#lw_site").value.trim(), start: Date.now(), finish: fin.getTime(), nextDue: Math.min(fin.getTime(), Date.now() + lw.interval * 60e3), interval: lw.interval,
+          planned: fin.getTime(), events: [], late: 0, contact: lw.name || "" };      // the log of this session, kept as a record at check-out
         if (best) { st.lat = +best.latitude.toFixed(6); st.lon = +best.longitude.toFixed(6); st.grid = OSGB.fromLatLon(st.lat, st.lon).ref; }
         const where = st.lat ? `${st.grid} – https://maps.google.com/?q=${st.lat},${st.lon}` : "(no GPS fix)";
         const note = $("#lw_note").value.trim();
@@ -763,17 +782,21 @@ async function lonePage() {
     return;
   }
   $("#ci").onclick = async () => {
-    await keep(); a.nextDue = Math.min(a.finish, Date.now() + (a.interval || 120) * 60e3); await DB.put("settings", s);
+    await keep(); loneEvent(a, "Check-in");
+    a.nextDue = Math.min(a.finish, Date.now() + (a.interval || 120) * 60e3); await DB.put("settings", s);
     send(`${me}: OK at ${a.site || "site"} (${t5(Date.now())}). Next check-in by ${t5(a.nextDue)}.`); setTimeout(() => route(), 800);
   };
   $("#late").onclick = async () => {
     const v = prompt("New finish time (HH:MM)", t5(a.finish + 3600e3)); if (!v) return;
     const [h, m] = v.split(":").map(Number); const fin = new Date(); fin.setHours(h, m, 0, 0); if (fin < new Date()) fin.setDate(fin.getDate() + 1);
+    loneEvent(a, "Running late – new finish " + t5(fin.getTime()));
     a.finish = fin.getTime(); a.nextDue = Math.min(a.finish, Date.now() + (a.interval || 120) * 60e3); await keep(); await DB.put("settings", s);
     send(`${me}: running late at ${a.site || "site"} – all OK. New finish about ${t5(a.finish)}; next check-in by ${t5(a.nextDue)}.`); setTimeout(() => route(), 800);
   };
   $("#co").onclick = async () => {
-    await keep(); const site = a.site; delete s.loneActive; await DB.put("settings", s);
+    await keep(); const site = a.site; loneEvent(a, "Check-out");
+    try { await DB.put("checks", loneRecord(a, me)); } catch (e) { }      // goes to the PC with the next Checks export
+    delete s.loneActive; await DB.put("settings", s);
     send(`${me}: finished at ${site || "site"} and off site safely (${t5(Date.now())}).`); setTimeout(() => route(), 800);
   };
 }

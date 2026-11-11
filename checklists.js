@@ -472,6 +472,81 @@ const CHECKLISTS = [
   ]
  },
  {
+  "key": "site_survey",
+  "title": "On-site assessment – surveys and inspections",
+  "group": "Site",
+  "asset": "Site",
+  "fields": [
+   "Client / job reference",
+   "Work being done [Tree risk survey | Roadside / PROW survey | Strategic road network survey | BS 5837 site survey | Drone inspection | Bat roost scoping | Nesting bird check | Property tree survey | Young tree check | Decay detection | Pre-quotation visit]",
+   "Method statement / risk assessment in use [RA-01 Tree risk surveys | RA-02 Roadside, PROW and estate surveys | RA-03 Strategic road network surveys | RA-04 BS 5837 site surveys | RA-05 Drone inspection | RA-06 Bat roost scoping | RA-07 Nesting bird checks | RA-08 Property tree surveys | RA-09 Young tree checks | RA-10 Decay detection | RA-11 Pre-quotation visits | Site-specific RAMS for this job | Main contractor's RAMS]",
+   "Nearest A&E – hospital",
+   "A&E address and postcode",
+   "A&E – distance / drive time",
+   "Emergency access point (grid ref / what3words)",
+   "Phone signal [Good | Patchy | None – check-in arranged another way]",
+   "Nominated contact and check-in times",
+   "Site contact (name and phone)"
+  ],
+  "note": "Do this on arrival, before leaving the vehicle area, with the risk assessment for the service. Find the nearest A&E before you set off where you can. For each hazard: ✓ = here and controlled, – = not here, ✕ = can't be controlled (say why) – then don't start. Add anything else under 'Other hazards and controls'. Do it again if the site or the weather changes.",
+  "team": true,
+  "log": [],
+  "sections": [
+   [
+    "Before you start",
+    [
+     "Parked safely and legally, off the carriageway, not blocking access; keys and phone on you",
+     "Site contact or occupier knows you are here; sign-in or induction done where there is one",
+     "Lone working check-in sent; your nominated contact has the site, access point and finish time",
+     "First-aid kit, charged phone, water and food; boots and hi-visibility clothing on",
+     "Weather checked – no inspection under trees in high wind, lightning or poor visibility",
+     "Method statement and risk assessment for this work read and still right for the site"
+    ]
+   ],
+   [
+    "Common hazards – ground and access",
+    [
+     "Uneven, wet, steep or overgrown ground; slopes and banks – route chosen, three points of contact on steep ground",
+     "Water – rivers, ponds, ditches and soft banks – keep back from the edge",
+     "Fences, gates, walls, barbed wire and electric fences – use gates and stiles; do not climb",
+     "Derelict buildings, excavations, open manholes, fly-tipping, glass and sharps",
+     "Remote ground – route and way out known; signal checked; someone knows where you are"
+    ]
+   ],
+   [
+    "Common hazards – traffic and people",
+    [
+     "Moving traffic – verges, footways, estate roads and car parks; face oncoming traffic; never survey from the carriageway",
+     "Site plant and vehicles – construction, farm and forestry machinery; keep out of working areas",
+     "Members of the public, children, schools and vulnerable people – explain what you are doing; keep kit under control",
+     "Aggression from occupiers, neighbours or the public – leave and report it",
+     "Dogs – ask for them to be kept in; do not enter a garden with a loose dog",
+     "Livestock – cattle with calves, bulls, horses and deer; go round, keep a way out, do not enter if in doubt"
+    ]
+   ],
+   [
+    "Common hazards – trees and wildlife",
+    [
+     "Deadwood, hanging branches and unstable trees overhead – do not stand or work beneath them",
+     "Overhead power and telephone lines near the trees – keep kit and measuring poles well clear",
+     "Harmful plants – giant hogweed, thorns and brambles; twigs at eye level – safety glasses in dense cover",
+     "Ticks, wasp and hornet nests, biting insects, oak processionary moth – cover up; check for ticks afterwards",
+     "Soil, water, animal waste and litter – cover cuts; clean hands before eating or drinking",
+     "Nesting birds, bats and other protected wildlife – look, do not disturb; record and report"
+    ]
+   ],
+   [
+    "This task",
+    [
+     "Drone – flight area, people, roads and airspace checked (see the drone pre-flight check)",
+     "Ladder, endoscope or decay-detection drill – ground firm, ladder footed or tied, kit checked",
+     "Tools – mallet, probe, tags and nails, marking paint – used away from other people",
+     "Shooting, forestry operations or other work in progress on the site – checked with the site contact"
+    ]
+   ]
+  ]
+ },
+ {
   "key": "site_ra",
   "title": "On-site risk assessment – tree work",
   "group": "Site",
@@ -479,7 +554,9 @@ const CHECKLISTS = [
   "fields": [
    "Client / job reference",
    "Work to be done",
-   "Nearest A&E",
+   "Method statement / RAMS in use",
+   "Nearest A&E – hospital",
+   "A&E address and postcode",
    "Emergency access point (grid ref / what3words)",
    "Phone signal",
    "First aider(s)",
