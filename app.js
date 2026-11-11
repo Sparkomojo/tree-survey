@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.41";
+const APP_VERSION = "1.42";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
