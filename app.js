@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.43";
+const APP_VERSION = "1.44";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -1347,8 +1347,16 @@ async function importZip(file) {
         else { idMap[pl.id] = pl.id; existing.plans.push(pl); }
       }
       usePlan(existing, (zp.active && idMap[zp.active]) || existing.planId);
+      let nl = 0;
+      for (const lay of d.job.layers || []) {  // map layers in the starter: same name = replace (keeps its switches), otherwise add
+        existing.layers = existing.layers || [];
+        const i = existing.layers.findIndex(q => (q.name || "") === (lay.name || "") || q.id === lay.id);
+        if (i >= 0) existing.layers[i] = Object.assign({}, lay, { id: existing.layers[i].id, zones: existing.layers[i].zones, hidden: existing.layers[i].hidden });
+        else existing.layers.push(lay);
+        nl++;
+      }
       existing.updated = Date.now(); await DB.put("jobs", existing);
-      toast(`${zp.list.length} plan${zp.list.length === 1 ? "" : "s"} updated for ${existing.site} – your trees are kept`, 3500); go("#/job/" + existing.id); return;
+      toast(`${zp.list.length} plan${zp.list.length === 1 ? "" : "s"}${nl ? ` and ${nl} map layer${nl === 1 ? "" : "s"}` : ""} updated for ${existing.site} – your trees are kept`, 3500); go("#/job/" + existing.id); return;
     }
     if (existing && !confirm(`"${d.job.site}" is already on this device. Replace it with the copy in the zip?`)) return;
     for (const t of await DB.by("trees", "job", d.job.id)) await DB.del("trees", t.id);
