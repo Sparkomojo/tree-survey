@@ -258,3 +258,9 @@ a.btn.primary { color: var(--accent-ink); }
 /* route notes */
 .chip.occ { background: #e6efe8; border-color: var(--green, #2f6b3a); color: var(--green, #2f6b3a); }
 .rnadd { border-style: dashed; color: #6b766d; min-height: 110px; }
+
+/* fill in from an earlier tree */
+.copybox { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: #fff7d6; color: #4d3d00; font-size: 0.92rem; }
+input.copied, textarea.copied, select.copied { background: #fff7d6; border-color: #d9b93a; }
+.chips.copied, label.copied { outline: 2px dashed #d9b93a; outline-offset: 3px; border-radius: 8px; }
+#copyPick { margin-top: 6px; }

@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.45";
+const APP_VERSION = "1.46";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -492,13 +492,33 @@ function startGps(onFix, onState) {
 }
 
 // ------------------------------------------------------------------ tree form
+// Fill a new tree in from an earlier one (similar stock). Only what describes the tree is copied – never its tag,
+// position, photos, observations, recommendations, works, risk ratings, bat / nest / pest records or retain / remove.
+const COPY_KEYS = ["species", "speciesMore", "height", "dbh", "stems", "spread", "spreadN", "spreadE", "spreadS", "spreadW", "radius",
+  "fullHeight", "lifeStage", "physio", "struct", "erc", "category", "ownership", "landowner", "ownershipNote", "constraints"];
+const COPY_DIMS = ["height", "dbh", "stems", "spread", "spreadN", "spreadE", "spreadS", "spreadW", "radius"];
+const copyHas = (x, k) => !(x[k] == null || x[k] === "" || x[k] === false || (Array.isArray(x[k]) && !x[k].length));
+function copyTreeDetails(t, src) {
+  const done = COPY_KEYS.filter(k => copyHas(src, k));
+  for (const k of done) t[k] = Array.isArray(src[k]) ? src[k].slice() : src[k];
+  if (done.some(k => COPY_DIMS.includes(k)) && !t.estimated) { t.estimated = true; t.estCopied = true; }  // until measured or confirmed
+  t.copiedFrom = src.tag || ""; t.copiedFields = done;
+  return done;
+}
+const copyPreview = x => [x.height && x.height + " m", x.dbh && x.dbh + " mm",
+  x.spread ? "spread " + x.spread + " m" : x.radius ? "radius " + x.radius + " m" : copyHas(x, "spreadN") ? "spread N " + x.spreadN + " m" : "",
+  x.lifeStage, x.physio && "physio. " + x.physio, x.struct && "struct. " + x.struct, x.category && "cat. " + x.category,
+  x.ownership && x.ownership !== "Client" ? x.ownership : ""].filter(Boolean).join(" · ");
+let treeDraft = null;  // a new tree being re-drawn after Fill in
+
 async function treePage(jobId, treeId) {
   const job = await DB.get("jobs", jobId);
   if (!job) return go("#/");
   const s = await settings();
   const all = await DB.by("trees", "job", jobId);
   const isNew = treeId === "new";
-  const t = isNew ? { id: uid(), jobId, tag: nextTag(all, job), species: "", created: Date.now() } : await DB.get("trees", treeId);
+  const draft = isNew && treeDraft && treeDraft.jobId === jobId ? treeDraft : null; treeDraft = null;
+  const t = draft || (isNew ? { id: uid(), jobId, tag: nextTag(all, job), species: "", created: Date.now() } : await DB.get("trees", treeId));
   if (!t) return go("#/job/" + jobId);
   const bs = job.type === "BS5837", rs = roadside(job);
   if (t.adb) t.adb = adbFix(t.adb);
@@ -508,6 +528,8 @@ async function treePage(jobId, treeId) {
   const stampTime = () => { if (job.trial) t.surveySec = Math.round(sec0 + (Date.now() - opened) / 1000); };
   const recentSpecies = [...new Set(all.sort((a, b) => (b.updated || 0) - (a.updated || 0)).map(x => x.species).filter(Boolean))].slice(0, 6);
 
+  // earlier trees this one can be filled in from, most recently edited first (the sort above)
+  const copyList = all.filter(x => x.id !== t.id && x.species);
   const methods = riskMethods(job), useValid = rs || methods.includes("VALID"), useThreats = methods.includes("THREATS") && !rs;
   const useQtra = methods.includes("QTRA") && qtraAllowed(s, job);
   // the licence holder's own QTRA table, if one has been loaded onto this device (Settings) – never part of the app
@@ -576,6 +598,10 @@ async function treePage(jobId, treeId) {
       <button class="chip add" id="addSp">＋ Another species</button></div>
     <div class="hint" id="moreSpHint" ${(t.speciesMore || []).length ? "" : "hidden"}>Groups, hedges and woodland: record all woody species present (BS 5837 4.4.2.8). Pick each species in the box and tap ＋.</div>
     ${recentSpecies.length ? `<div class="chips" id="recent">${recentSpecies.map(x => `<button class="chip" data-sp="${esc(x)}">${esc(common(x))}</button>`).join("")}</div>` : ""}
+    ${isNew && copyList.length ? `<div class="copybox" id="copyOffer" hidden></div>
+    <select id="copyPick" aria-label="Fill in from an earlier tree"><option value="">Fill in from an earlier tree…</option>${copyList.slice(0, 40).map(x => `<option value="${esc(x.id)}">${esc(x.tag || "?")} – ${esc(common(x.species))}${copyPreview(x) ? " · " + esc(copyPreview(x)) : ""}</option>`).join("")}</select>` : ""}
+    ${(t.copiedFields || []).length ? `<div class="copybox" id="copyNote"><b>Filled in from ${esc(t.copiedFrom || "an earlier tree")}.</b> The tinted boxes are copied – check each against this tree. Observations, recommendations and risk ratings are never copied.${t.estCopied ? " Dimensions are marked estimated until you change them or tap Checked." : ""}
+      <div class="row" style="margin-top:6px"><button class="btn small" id="copyOk">✓ Checked</button></div></div>` : ""}
     <div class="grid2">${num("height", "Height (m)")}${f("dbh", bs ? "Stem diameter (mm)" : "DBH (mm)", 'inputmode="decimal" autocomplete="off" placeholder="450 or 3x200"')}</div>
     ${job.bands && !bs ? `<label>Height band (m)</label>${bandChips("height")}<label>DBH band (mm)</label>${bandChips("dbh")}` : ""}
     <div class="hint">Multi-stem: <button class="chip" id="kbd">Switch to full keyboard</button> then type e.g. 200,180,150 or 3x200; groups: 150-300.</div>
@@ -878,7 +904,42 @@ async function treePage(jobId, treeId) {
     if (roadside(job)) nums.length = 0;  // one number series across T and TG
     t.tag = p + (nums.length ? Math.max(...nums) + 1 : start); $("#f_tag").value = t.tag; checkDupe(); touch();
   };
-  const rec = $("#recent"); if (rec) rec.onclick = e => { const b = e.target.closest(".chip"); if (!b) return; t.species = b.dataset.sp; $("#f_species").value = t.species; $("#f_species").dispatchEvent(new Event("input")); };
+  const rec = $("#recent"); if (rec) rec.onclick = e => { const b = e.target.closest(".chip"); if (!b) return; t.species = b.dataset.sp; $("#f_species").value = t.species; $("#f_species").dispatchEvent(new Event("input")); copyOffer(t.species); };
+  // --- fill in from an earlier tree
+  const fillFrom = async src => {
+    copyTreeDetails(t, src);
+    clearTimeout(saveTimer); stopGps(); leaveHook = null;
+    if (persisted) { dirty = true; await saveNow(); }
+    treeDraft = t; await treePage(jobId, "new");
+    toast(`Filled in from ${src.tag || "an earlier tree"} – check the tinted boxes`);
+  };
+  function copyOffer(species) {
+    const box = $("#copyOffer"); if (!box) return;
+    const src = copyList.find(x => x.species === species);
+    if (!src || !COPY_KEYS.some(k => k !== "species" && copyHas(src, k))) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = `Fill in the rest from <b>${esc(src.tag || "the last one")}</b>${copyPreview(src) ? " (" + esc(copyPreview(src)) + ")" : ""}? Everything stays editable.
+      <div class="row" style="margin-top:6px"><button class="btn small primary" id="copyYes">Fill in</button><button class="btn small" id="copyNo">Not now</button></div>`;
+    $("#copyYes").onclick = e => { e.preventDefault(); fillFrom(src); };
+    $("#copyNo").onclick = e => { e.preventDefault(); box.hidden = true; };
+  }
+  if ($("#copyPick")) $("#copyPick").onchange = e => { const src = copyList.find(x => x.id === e.target.value); e.target.value = ""; if (src) fillFrom(src); };
+  const copiedEl = k => $("#f_" + k) || app.querySelector(`[data-pick="${k}"]`) || app.querySelector(`[data-band="${k}"]`) || (k === "speciesMore" ? $("#moreSp") : k === "fullHeight" ? $("#fullHeight") && $("#fullHeight").closest("label") : null);
+  const copyClear = k => {
+    if (!(t.copiedFields || []).includes(k)) return;
+    t.copiedFields = t.copiedFields.filter(x => x !== k);
+    const el = copiedEl(k); if (el) el.classList.remove("copied");
+    if (t.estCopied && !t.copiedFields.some(x => COPY_DIMS.includes(x))) { delete t.estCopied; t.estimated = false; $("#estimated").checked = false; }
+    if (!t.copiedFields.length) { delete t.copiedFields; const n = $("#copyNote"); if (n) n.remove(); }
+  };
+  for (const k of (t.copiedFields || []).slice()) {
+    const el = copiedEl(k); if (!el) continue;
+    el.classList.add("copied");
+    el.addEventListener(el.matches("input, textarea, select") ? "input" : "click", () => copyClear(k));
+  }
+  if ($("#copyOk")) $("#copyOk").onclick = e => { e.preventDefault(); for (const k of (t.copiedFields || []).slice()) copyClear(k); const n = $("#copyNote"); if (n) n.remove(); touch(); };
+  $("#estimated").addEventListener("change", () => { delete t.estCopied; });
+  if (draft) dirty = true;  // a filled-in tree has details: keep it when leaving
   $("#kbd").onclick = e => { e.preventDefault(); const d = $("#f_dbh"); d.inputMode = d.inputMode === "text" ? "decimal" : "text"; e.target.textContent = d.inputMode === "text" ? "Back to number pad" : "Switch to full keyboard"; d.blur(); setTimeout(() => d.focus(), 50); };
   function checkDupe() { const tag = (t.tag || "").trim().toUpperCase(); $("#dupe").hidden = !all.some(x => x.id !== t.id && (x.tag || "").toUpperCase() === tag); }
   checkDupe();
