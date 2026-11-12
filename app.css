@@ -264,3 +264,7 @@ a.btn.primary { color: var(--accent-ink); }
 input.copied, textarea.copied, select.copied { background: #fff7d6; border-color: #d9b93a; }
 .chips.copied, label.copied { outline: 2px dashed #d9b93a; outline-offset: 3px; border-radius: 8px; }
 #copyPick { margin-top: 6px; }
+
+/* text size (Settings) – pages only; a page holding a map is left alone so the map still tracks the finger */
+html[data-text="large"] main:not(:has(#map)), html[data-text="large"] .bar { zoom: 1.15; }
+html[data-text="larger"] main:not(:has(#map)), html[data-text="larger"] .bar { zoom: 1.3; }

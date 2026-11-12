@@ -8,7 +8,12 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.47";
+const APP_VERSION = "1.48";
+// text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
+const TEXT_SIZES = ["Standard", "Large", "Larger"];
+const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
+const applyTextSize = v => { try { localStorage.setItem("tree-survey-text", v); } catch (e) { } document.documentElement.dataset.text = v === "Standard" ? "" : v.toLowerCase(); };
+document.documentElement.dataset.text = textSize() === "Standard" ? "" : textSize().toLowerCase();
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -1250,6 +1255,9 @@ async function settingsPage() {
   app.innerHTML = `
   <header class="top"><button aria-label="Back" onclick="go('#/')">‹</button><h1>Settings</h1></header>
   <main>
+    <label>Text size</label>
+    <div class="chips" id="textSize">${TEXT_SIZES.map(v => `<button class="chip ${textSize() === v ? "on" : ""}" data-v="${v}">${v}</button>`).join("")}</div>
+    <p class="hint">Makes the text, boxes and buttons bigger on this device. Maps stay as they are.</p>
     <label for="consultant">Surveyor name</label><input id="consultant" value="${esc(s.consultant)}">
     <label for="qtraAssessors">Registered QTRA assessors (one per line: name – registration no.)</label>
     <textarea id="qtraAssessors" rows="3" placeholder="Mark Johnson – 1234">${esc((s.qtraAssessors || []).join("\n"))}</textarea>
@@ -1281,6 +1289,8 @@ async function settingsPage() {
   </main>
   <div class="bar"><button class="btn primary" id="save">Save</button></div>`;
   $("#reset").onclick = () => { for (const k of Object.keys(DEFAULT_PHRASES)) $("#p_" + k).value = DEFAULT_PHRASES[k].join("\n"); };
+  $("#textSize").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; e.preventDefault(); applyTextSize(b.dataset.v);
+    $("#textSize").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); };
   const qtraShow = async () => {
     const q = await DB.get("settings", "qtraTable");
     $("#qtraState").textContent = q && q.roh ? `Loaded on this device: ${Object.keys(q.roh).length} combinations from ${q.source || "a file"} on ${q.installed || "?"}.` : "No table on this device – the Risk of Harm is typed.";
@@ -1478,7 +1488,12 @@ async function importZip(file) {
       existing.updated = Date.now(); await DB.put("jobs", existing);
       toast(`${zp.list.length} plan${zp.list.length === 1 ? "" : "s"}${nl ? ` and ${nl} map layer${nl === 1 ? "" : "s"}` : ""} updated for ${existing.site} – your trees are kept`, 3500); go("#/job/" + existing.id); return;
     }
-    if (existing && !confirm(`"${d.job.site}" is already on this device. Replace it with the copy in the zip?`)) return;
+    if (existing) {  // the same survey from another device: add its trees, or replace what's here
+      const mine = await DB.by("trees", "job", d.job.id), ids = new Set(mine.map(t => t.id));
+      const fresh = (d.trees || []).filter(t => !ids.has(t.id)).length;
+      if (confirm(`"${d.job.site}" is already on this device (${mine.length} trees). The zip has ${(d.trees || []).length} trees, ${fresh} of them not on this device.\n\nOK – ADD the zip's trees to the survey here (a survey done on two devices, or by two surveyors). A tree on both keeps whichever copy was changed last.\n\nCancel – other choices.`)) return await mergeZip(zip, d, existing, mine);
+      if (!confirm(`Replace "${d.job.site}" on this device with the copy in the zip?\n\nThe ${mine.length} trees here now would be removed.`)) return;
+    }
     for (const t of await DB.by("trees", "job", d.job.id)) await DB.del("trees", t.id);
     for (const p of await DB.by("photos", "job", d.job.id)) await DB.del("photos", p.id);
     for (const f of await DB.by("features", "job", d.job.id)) await DB.del("features", f.id);
@@ -1494,6 +1509,41 @@ async function importZip(file) {
     }
     toast(`Restored ${d.job.site}: ${d.trees.length} trees`); go("#/job/" + d.job.id);
   } catch (e) { console.error(e); toast("Couldn't restore: " + e.message, 5000); }
+}
+
+// Add another device's export to the survey already here: trees, photos and map features. A tree or feature on both
+// keeps whichever copy was changed last; nothing here is removed; this device's plans, layers and job details are kept.
+async function mergeZip(zip, d, job, mine) {
+  const byId = new Map(mine.map(t => [t.id, t]));
+  let added = 0, updated = 0, kept = 0, photos = 0;
+  const take = new Set();  // trees whose copy in the zip is the one kept
+  for (const t of d.trees || []) {
+    const cur = byId.get(t.id);
+    if (!cur) { await DB.put("trees", t); added++; take.add(t.id); }
+    else if ((t.updated || 0) > (cur.updated || 0)) { await DB.put("trees", t); updated++; take.add(t.id); }
+    else kept++;
+  }
+  const have = new Set((await DB.by("photos", "job", job.id)).map(p => p.id));
+  for (const p of d.photos || []) {
+    if (have.has(p.id) || (p.tree && !take.has(p.tree) && !byId.has(p.tree))) continue;
+    const f = zip.file(p.file); if (!f) continue;
+    const rec = Object.assign({}, p, { blob: new Blob([await f.async("arraybuffer")], { type: "image/jpeg" }) }); delete rec.file;
+    await DB.put("photos", rec); photos++;
+  }
+  const feats = new Map((await DB.by("features", "job", job.id)).map(f => [f.id, f]));
+  for (const f of d.features || []) { const cur = feats.get(f.id); if (!cur || (f.updated || 0) > (cur.updated || 0)) await DB.put("features", f); }
+  for (const k of ["client", "site", "address", "consultant"]) if (!job[k] && d.job[k]) job[k] = d.job[k];
+  if ((d.job.safety || []).length) {  // site safety checks from the other device, once each
+    const seen = new Set((job.safety || []).map(x => JSON.stringify(x)));
+    job.safety = (job.safety || []).concat(d.job.safety.filter(x => !seen.has(JSON.stringify(x))));
+  }
+  job.updated = Date.now(); await DB.put("jobs", job);
+  const tags = {}; for (const t of await DB.by("trees", "job", job.id)) { const k = (t.tag || "").trim().toUpperCase(); if (k) tags[k] = (tags[k] || 0) + 1; }
+  const dup = Object.keys(tags).filter(k => tags[k] > 1);
+  const msg = `${added} tree${added === 1 ? "" : "s"} added, ${updated} updated, ${kept} already up to date here; ${photos} photo${photos === 1 ? "" : "s"} added.`
+    + (dup.length ? `\n\n⚠ ${dup.length} tag${dup.length === 1 ? " is" : "s are"} used twice – renumber one of each: ${dup.slice(0, 20).join(", ")}${dup.length > 20 ? "…" : ""}` : "");
+  alert(msg); go("#/job/" + job.id); if (location.hash === "#/job/" + job.id) route();
+  return { added, updated, kept, photos, dup };
 }
 
 // ------------------------------------------------------------------ start
