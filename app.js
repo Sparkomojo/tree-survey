@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.46";
+const APP_VERSION = "1.47";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -493,14 +493,18 @@ function startGps(onFix, onState) {
 
 // ------------------------------------------------------------------ tree form
 // Fill a new tree in from an earlier one (similar stock). Only what describes the tree is copied – never its tag,
-// position, photos, observations, recommendations, works, risk ratings, bat / nest / pest records or retain / remove.
+// position, photos, works, risk ratings, bat / nest / pest records or retain / remove. Observations and recommendations
+// are copied in one case only (Mark, 12 Nov 2026): from an ash with an ash dieback category, together with that category.
 const COPY_KEYS = ["species", "speciesMore", "height", "dbh", "stems", "spread", "spreadN", "spreadE", "spreadS", "spreadW", "radius",
   "fullHeight", "lifeStage", "physio", "struct", "erc", "category", "ownership", "landowner", "ownershipNote", "constraints"];
 const COPY_DIMS = ["height", "dbh", "stems", "spread", "spreadN", "spreadE", "spreadS", "spreadW", "radius"];
+const COPY_ADB = ["adb", "comments", "recs"];
+const isAsh = x => /fraxinus|ash\b/i.test((x && x.species) || "");
+const copyAdb = src => isAsh(src) && !!src.adb;
 const copyHas = (x, k) => !(x[k] == null || x[k] === "" || x[k] === false || (Array.isArray(x[k]) && !x[k].length));
 function copyTreeDetails(t, src) {
-  const done = COPY_KEYS.filter(k => copyHas(src, k));
-  for (const k of done) t[k] = Array.isArray(src[k]) ? src[k].slice() : src[k];
+  const done = COPY_KEYS.concat(copyAdb(src) ? COPY_ADB : []).filter(k => copyHas(src, k));
+  for (const k of done) t[k] = Array.isArray(src[k]) ? src[k].slice() : k === "adb" ? adbFix(src[k]) : src[k];
   if (done.some(k => COPY_DIMS.includes(k)) && !t.estimated) { t.estimated = true; t.estCopied = true; }  // until measured or confirmed
   t.copiedFrom = src.tag || ""; t.copiedFields = done;
   return done;
@@ -508,7 +512,7 @@ function copyTreeDetails(t, src) {
 const copyPreview = x => [x.height && x.height + " m", x.dbh && x.dbh + " mm",
   x.spread ? "spread " + x.spread + " m" : x.radius ? "radius " + x.radius + " m" : copyHas(x, "spreadN") ? "spread N " + x.spreadN + " m" : "",
   x.lifeStage, x.physio && "physio. " + x.physio, x.struct && "struct. " + x.struct, x.category && "cat. " + x.category,
-  x.ownership && x.ownership !== "Client" ? x.ownership : ""].filter(Boolean).join(" · ");
+  x.ownership && x.ownership !== "Client" ? x.ownership : "", copyAdb(x) ? "ADB " + adbFix(x.adb) : ""].filter(Boolean).join(" · ");
 let treeDraft = null;  // a new tree being re-drawn after Fill in
 
 async function treePage(jobId, treeId) {
@@ -600,7 +604,7 @@ async function treePage(jobId, treeId) {
     ${recentSpecies.length ? `<div class="chips" id="recent">${recentSpecies.map(x => `<button class="chip" data-sp="${esc(x)}">${esc(common(x))}</button>`).join("")}</div>` : ""}
     ${isNew && copyList.length ? `<div class="copybox" id="copyOffer" hidden></div>
     <select id="copyPick" aria-label="Fill in from an earlier tree"><option value="">Fill in from an earlier tree…</option>${copyList.slice(0, 40).map(x => `<option value="${esc(x.id)}">${esc(x.tag || "?")} – ${esc(common(x.species))}${copyPreview(x) ? " · " + esc(copyPreview(x)) : ""}</option>`).join("")}</select>` : ""}
-    ${(t.copiedFields || []).length ? `<div class="copybox" id="copyNote"><b>Filled in from ${esc(t.copiedFrom || "an earlier tree")}.</b> The tinted boxes are copied – check each against this tree. Observations, recommendations and risk ratings are never copied.${t.estCopied ? " Dimensions are marked estimated until you change them or tap Checked." : ""}
+    ${(t.copiedFields || []).length ? `<div class="copybox" id="copyNote"><b>Filled in from ${esc(t.copiedFrom || "an earlier tree")}.</b> The tinted boxes are copied – check each against this tree. ${t.copiedFields.includes("adb") ? "Its ash dieback category, observations and recommendations were copied too – add to them or change them for this tree. Risk ratings are never copied." : "Observations, recommendations and risk ratings are never copied."}${t.estCopied ? " Dimensions are marked estimated until you change them or tap Checked." : ""}
       <div class="row" style="margin-top:6px"><button class="btn small" id="copyOk">✓ Checked</button></div></div>` : ""}
     <div class="grid2">${num("height", "Height (m)")}${f("dbh", bs ? "Stem diameter (mm)" : "DBH (mm)", 'inputmode="decimal" autocomplete="off" placeholder="450 or 3x200"')}</div>
     ${job.bands && !bs ? `<label>Height band (m)</label>${bandChips("height")}<label>DBH band (mm)</label>${bandChips("dbh")}` : ""}
@@ -915,12 +919,23 @@ async function treePage(jobId, treeId) {
   };
   function copyOffer(species) {
     const box = $("#copyOffer"); if (!box) return;
-    const src = copyList.find(x => x.species === species);
+    const same = copyList.filter(x => x.species === species);
+    const src = same[0];
     if (!src || !COPY_KEYS.some(k => k !== "species" && copyHas(src, k))) { box.hidden = true; return; }
     box.hidden = false;
-    box.innerHTML = `Fill in the rest from <b>${esc(src.tag || "the last one")}</b>${copyPreview(src) ? " (" + esc(copyPreview(src)) + ")" : ""}? Everything stays editable.
-      <div class="row" style="margin-top:6px"><button class="btn small primary" id="copyYes">Fill in</button><button class="btn small" id="copyNo">Not now</button></div>`;
-    $("#copyYes").onclick = e => { e.preventDefault(); fillFrom(src); };
+    // ash: the most recent tree in each ash dieback category, so the right category's wording can be chosen
+    const cats = [];
+    for (const x of same) if (copyAdb(x) && !cats.some(c => adbFix(c.adb) === adbFix(x.adb))) cats.push(x);
+    if (cats.length > 1 || (cats.length === 1 && cats[0] !== src)) {
+      cats.sort((a, b) => adbFix(a.adb).localeCompare(adbFix(b.adb)));
+      box.innerHTML = `Fill in from an ash in the same ash dieback category? Its observations and recommendations come too, and everything stays editable.
+        <div class="row" style="margin-top:6px;flex-wrap:wrap">${cats.map((x, i) => `<button class="btn small primary" data-cat="${i}">${esc(adbFix(x.adb))} (${esc(x.tag || "?")})</button>`).join("")}<button class="btn small" id="copyNo">Not now</button></div>`;
+      box.querySelectorAll("[data-cat]").forEach(b => b.onclick = e => { e.preventDefault(); fillFrom(cats[+b.dataset.cat]); });
+    } else {
+      box.innerHTML = `Fill in the rest from <b>${esc(src.tag || "the last one")}</b>${copyPreview(src) ? " (" + esc(copyPreview(src)) + ")" : ""}?${copyAdb(src) ? " Its ash dieback category, observations and recommendations come too." : ""} Everything stays editable.
+        <div class="row" style="margin-top:6px"><button class="btn small primary" id="copyYes">Fill in</button><button class="btn small" id="copyNo">Not now</button></div>`;
+      $("#copyYes").onclick = e => { e.preventDefault(); fillFrom(src); };
+    }
     $("#copyNo").onclick = e => { e.preventDefault(); box.hidden = true; };
   }
   if ($("#copyPick")) $("#copyPick").onchange = e => { const src = copyList.find(x => x.id === e.target.value); e.target.value = ""; if (src) fillFrom(src); };
