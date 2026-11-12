@@ -8,15 +8,15 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.44";
+const APP_VERSION = "1.45";
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
   "Crown Spread E", "Crown Spread S", "Crown Spread W", "Crown Clearance (m)", "First Branch", "Life Stage",
   "Physiological Condition", "Structural Condition", "Comments", "Recommendations", "ERC (years)", "Category",
   "Retain/Remove", "RPA Incursion", "AIA Notes", "VALID Risk", "QTRA Risk of Harm", "QTRA Target", "QTRA Size",
-  "QTRA PoF", "W3W / Grid Ref", "Latitude", "Longitude", "Bat PRF", "QTRA Mass %", "Mx Targets", "THREATS Score", "THREATS Indicator", "CAVAT (£)", "Change Since Last Survey", "Zone", "Veteran Features", "End Grid Ref", "End Latitude", "End Longitude"];
-const RISK_HEAD = ["VALID Risk", "QTRA Risk of Harm", "QTRA Target", "QTRA Size", "QTRA PoF", "QTRA Mass %", "Mx Targets", "THREATS Score", "THREATS Indicator"];
+  "QTRA PoF", "W3W / Grid Ref", "Latitude", "Longitude", "Bat PRF", "QTRA Mass %", "Mx Targets", "THREATS Score", "THREATS Indicator", "CAVAT (£)", "Change Since Last Survey", "Zone", "Veteran Features", "QTRA Hazard", "QTRA Target Description", "End Grid Ref", "End Latitude", "End Longitude"];
+const RISK_HEAD = ["VALID Risk", "QTRA Risk of Harm", "QTRA Target", "QTRA Size", "QTRA PoF", "QTRA Mass %", "Mx Targets", "THREATS Score", "THREATS Indicator", "QTRA Hazard", "QTRA Target Description"];
 const ADB = ["", "Cat. 1: 0-25%", "Cat. 2: 26-50%", "Cat. 3: 51-75%", "Cat. 4: 76-100%"];
 // older versions had the categories numbered the other way round – keep the crown loss, fix the number
 const adbFix = v => { const m = /(\d+)\s*[-–]\s*(\d+)\s*%/.exec(v || ""); if (!m) return v || ""; const lo = +m[1]; return ADB[lo < 26 ? 1 : lo < 51 ? 2 : lo < 76 ? 3 : 4]; };
@@ -510,6 +510,8 @@ async function treePage(jobId, treeId) {
 
   const methods = riskMethods(job), useValid = rs || methods.includes("VALID"), useThreats = methods.includes("THREATS") && !rs;
   const useQtra = methods.includes("QTRA") && qtraAllowed(s, job);
+  // the licence holder's own QTRA table, if one has been loaded onto this device (Settings) – never part of the app
+  const qtraTable = useQtra ? ((await DB.get("settings", "qtraTable")) || {}).roh || null : null;
   const th = t.threats || {};
   const useCavat = methods.includes("CAVAT"), cv = t.cavat || {};
   const cvPick = (k, opts) => `<div class="chips" data-cv="${k}">${opts.map(([v, l]) => `<button class="chip small ${String(cv[k]) === String(v) ? "on" : ""}" data-v="${v}">${esc(l)}</button>`).join("")}</div>`;
@@ -627,6 +629,8 @@ async function treePage(jobId, treeId) {
       <label>Impact score</label>${thPick("i", THREATS.IMPACT)}
       <div class="roh" id="thOut"></div>` : ""}
       ${useQtra ? `<h3 class="subhead">QTRA</h3>
+      ${f("qtraHazard", "Hazard assessed – what could fail", 'placeholder="e.g. dead limb, 150 mm, over the footpath" autocomplete="off"')}
+      ${f("qtraTarget", "Target – who or what it could hit", 'placeholder="e.g. footpath, about 30 walkers an hour" autocomplete="off"')}
       <label>Target type</label>${pick("qtraType", ["Human", "Vehicle", "Property"])}
       <div class="grid3">
         <div><label for="f_qtraT">Target</label><select id="f_qtraT" data-f="qtraT">${["", 1, 2, 3, 4, 5, 6].map(v => `<option ${String(t.qtraT ?? "") === String(v) ? "selected" : ""}>${v}</option>`).join("")}</select></div>
@@ -638,8 +642,8 @@ async function treePage(jobId, treeId) {
         ${f("qtraMx", "Multiple targets (Mx)", 'inputmode="numeric" placeholder="1" autocomplete="off"')}
       </div>
       <div class="roh" id="rohOut"></div>
-      ${f("qtraRoh", "Risk of Harm (from your QTRA calculator)", 'placeholder="1/250,000" autocomplete="off"')}
-      <div class="hint">Work the Risk of Harm out with your QTRA calculator and type it here; the colour shows its band. Size isn't used for property targets.</div>` :
+      ${f("qtraRoh", qtraTable ? "Risk of Harm – leave blank to use the result above, or type your own" : "Risk of Harm (from your QTRA calculator)", 'placeholder="1/250,000" autocomplete="off"')}
+      <div class="hint">${qtraTable ? "Worked out from your own QTRA table on this device, allowing for reduced mass and multiple targets. A Risk of Harm you type is used instead. A blank box is filled in by the PC toolkit from its own copy of the table." : "Work the Risk of Harm out with your QTRA calculator and type it here; the colour shows its band."} Size isn't used for property targets. QTRA asks for the hazard and the target to be recorded.</div>` :
       riskMethods(job).includes("QTRA") ? `<div class="hint">QTRA is only shown for a registered QTRA assessor – add the surveyor and registration number in Settings.</div>` : ""}
     </details>
     ${useCavat ? `<details class="more" id="cavatBox" ${t.cavat ? "open" : ""}><summary>CAVAT value</summary>
@@ -702,6 +706,12 @@ async function treePage(jobId, treeId) {
     const out = $("#rohOut");
     if (t.qtraType === "Vehicle" && String(t.qtraT) === "6") { out.className = "roh roh-amber"; out.textContent = "Vehicles only go to Target 5"; return; }
     const r = QTRA.parse(t.qtraRoh);
+    if (!r && !t.qtraRoh && qtraTable) {  // nothing typed: work it out from the table loaded on this device
+      const w = QTRA.lookup(qtraTable, t.qtraType, t.qtraT, prop ? "" : t.qtraS, t.qtraP, t.qtraMass, t.qtraMx);
+      if (!w) { out.className = "roh"; out.textContent = ""; return; }
+      const [b, cls] = QTRA.band(w);
+      out.className = "roh " + cls; out.textContent = `${QTRA.text(w)} – ${b}`; return;
+    }
     if (!r) { out.className = "roh"; out.textContent = t.qtraRoh ? "Enter the Risk of Harm as 1/250,000" : ""; return; }
     const [b, cls] = QTRA.band(r);
     out.className = "roh " + cls; out.textContent = b;
@@ -709,6 +719,8 @@ async function treePage(jobId, treeId) {
   if (useQtra) {
     $("[data-pick=qtraType]").addEventListener("click", () => setTimeout(qtraCalc, 0));
     $("#f_qtraRoh").addEventListener("input", qtraCalc);
+    for (const id of ["f_qtraT", "f_qtraS", "f_qtraP", "f_qtraMass"]) $("#" + id).addEventListener("change", () => setTimeout(qtraCalc, 0));
+    $("#f_qtraMx").addEventListener("input", () => setTimeout(qtraCalc, 0));
     qtraCalc();
   }
   // THREATS: failure x target x impact -> Threat Category
@@ -1137,6 +1149,21 @@ async function sitePhotosPage(jobId) {
 }
 
 // ------------------------------------------------------------------ settings
+// load the licence holder's own QTRA table onto this device (the spreadsheet QTRA supplies, or the toolkit's qtra_roh.json)
+async function qtraLoadFile(file) {
+  let res;
+  try {
+    if (/\.json$/i.test(file.name)) res = QTRA.readJson(await file.text());
+    else {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      res = QTRA.readRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" }));
+    }
+  } catch (e) { res = { error: "The file couldn't be read." }; }
+  if (res.error) return "Not loaded – " + res.error;
+  await DB.put("settings", { id: "qtraTable", roh: res.table, source: file.name, installed: new Date().toISOString().slice(0, 10) });
+  return `QTRA table loaded – ${Object.keys(res.table).length} combinations`;
+}
+
 async function settingsPage() {
   const s = await settings();
   let est = "";
@@ -1151,6 +1178,11 @@ async function settingsPage() {
     <label for="qtraAssessors">Registered QTRA assessors (one per line: name – registration no.)</label>
     <textarea id="qtraAssessors" rows="3" placeholder="Mark Johnson – 1234">${esc((s.qtraAssessors || []).join("\n"))}</textarea>
     <p class="hint">QTRA appears on a survey only when its surveyor is listed here. Check each registration on qtra.co.uk.</p>
+    <label for="qtraFile">QTRA Risk of Harm table – QTRA licence holders only</label>
+    <p class="hint" id="qtraState"></p>
+    <input type="file" id="qtraFile" accept=".xlsx,.json">
+    <button class="btn small" id="qtraRemove" style="margin-top:8px" hidden>Remove the table from this device</button>
+    <p class="hint">Only if QTRA Ltd has agreed that you may use their data in this app, for your own use and that of your Licensee Representatives. Choose the spreadsheet QTRA sent you (or the PC toolkit's qtra_roh.json). The table stays on this device: it is not part of the app, and is never put in a survey export, a backup or a starter. Without it, type the Risk of Harm from your QTRA calculator.</p>
     <label for="decl">Magnetic declination for laser bearings (°, east +)</label><input id="decl" inputmode="decimal" value="${esc(s.declination ?? 0)}">
     <p class="hint">Added to compass bearings to make them true. In the UK it's within a degree or two of zero – the BGS declination calculator gives today's figure. Leave 0 if your rangefinder is already set to true north.</p>
     <label for="uvf">CAVAT Unit Value Factor (£)</label><input id="uvf" inputmode="decimal" value="${esc(s.uvf || CAVAT.DEFAULT_UVF)}">
@@ -1173,6 +1205,18 @@ async function settingsPage() {
   </main>
   <div class="bar"><button class="btn primary" id="save">Save</button></div>`;
   $("#reset").onclick = () => { for (const k of Object.keys(DEFAULT_PHRASES)) $("#p_" + k).value = DEFAULT_PHRASES[k].join("\n"); };
+  const qtraShow = async () => {
+    const q = await DB.get("settings", "qtraTable");
+    $("#qtraState").textContent = q && q.roh ? `Loaded on this device: ${Object.keys(q.roh).length} combinations from ${q.source || "a file"} on ${q.installed || "?"}.` : "No table on this device – the Risk of Harm is typed.";
+    $("#qtraRemove").hidden = !(q && q.roh);
+  };
+  $("#qtraFile").onchange = async e => {
+    const file = e.target.files[0]; e.target.value = "";
+    if (file) toast(await qtraLoadFile(file));
+    qtraShow();
+  };
+  $("#qtraRemove").onclick = async () => { if (confirm("Remove the QTRA table from this device?")) { await DB.del("settings", "qtraTable"); qtraShow(); } };
+  qtraShow();
   $("#save").onclick = async () => {
     s.consultant = $("#consultant").value.trim();
     s.askDetails = $("#askDetails").checked;
@@ -1203,11 +1247,11 @@ function treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, wit
     return [t.tag, t.tpo, sp, n(t.height), n(t.dbh), n0(t.stems), n(t.spreadN), n(t.spreadE), n(t.spreadS), n(t.spreadW),
       n(t.clearance), t.firstBranch, t.lifeStage, t.physio, t.struct, t.comments, recs, t.erc, t.category, t.retain, t.rpa,
       t.aiaNotes, t.valid, t.qtraRoh, n0(t.qtraT), qSize, n0(t.qtraP), loc, t.lat ?? "", t.lon ?? "", t.batPrf || "",
-      t.qtraMass || "", n0(t.qtraMx), thScore(t), thInd(t), t.cavatValue ?? "", sizeChange(t).text || "", t.zone || "", vetSummary(t.vet), ...endCells(t)].map(v => v ?? "");
+      t.qtraMass || "", n0(t.qtraMx), thScore(t), thInd(t), t.cavatValue ?? "", sizeChange(t).text || "", t.zone || "", vetSummary(t.vet), t.qtraHazard || "", t.qtraTarget || "", ...endCells(t)].map(v => v ?? "");
   }
   const row = [job.site, t.tag, loc, sp, n(t.height), n(t.dbh), crownValue(t, job, n), t.comments, recs, adbFix(t.adb), t.constraints,
     t.lat ?? "", t.lon ?? "", t.acc ?? "", t.batPrf || ""];
-  if (withRisk) row.push(t.valid, t.qtraRoh, n0(t.qtraT), qSize, n0(t.qtraP), t.qtraMass || "", n0(t.qtraMx), thScore(t), thInd(t));
+  if (withRisk) row.push(t.valid, t.qtraRoh, n0(t.qtraT), qSize, n0(t.qtraP), t.qtraMass || "", n0(t.qtraMx), thScore(t), thInd(t), t.qtraHazard || "", t.qtraTarget || "");
   if (withCavat) row.push(t.cavatValue ?? "");
   if (withChange) row.push(sizeChange(t).text || "");
   if (withZone) row.push(t.zone || "");
