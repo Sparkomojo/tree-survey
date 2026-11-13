@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.52";
+const APP_VERSION = "1.53";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -552,7 +552,7 @@ async function treePage(jobId, treeId) {
   const pick = (k, opts) => `<div class="chips" data-pick="${k}">${opts.map(o => `<button class="chip ${t[k] === o ? "on" : ""}" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div>`;
   const ta = (k, lab, phrases) => `<label for="f_${k}">${lab}</label><textarea id="f_${k}" data-f="${k}">${esc(t[k] ?? "")}</textarea>
     <div class="chips phr">${phrases.map(p => `<button class="chip" data-add="f_${k}"${k === "comments" ? " data-detail" : ""}>${esc(p)}</button>`).join("")}</div>
-    ${k === "comments" ? `<div class="row" style="margin-top:6px"><button class="btn small" id="addDefect">＋ Defect / feature</button><button class="btn small" id="addFungus">🍄 Fungus / disease</button><button class="btn small" id="addPest">🐛 Pest / disease</button></div>` : ""}`;
+    ${k === "comments" ? `<div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="btn small" id="addDead">Dead</button><button class="btn small" id="addDefect">＋ Defect / feature</button><button class="btn small" id="addFungus">🍄 Fungus / disease</button><button class="btn small" id="addPest">🐛 Pest / disease</button></div>` : ""}`;
 
   app.innerHTML = `
   <header class="top"><button aria-label="Back to tree list" id="back">‹</button>
@@ -862,6 +862,14 @@ async function treePage(jobId, treeId) {
     e.preventDefault(); defectSheet(b.textContent.trim(), s.phrases.obs, addObs, { dbh: stemDia() });
   });
   $("#addDefect").onclick = e => { e.preventDefault(); defectSheet("", s.phrases.obs, addObs, { dbh: stemDia() }); };
+  // one tap: "Dead." goes at the front of the observations (no details panel)
+  $("#addDead").onclick = e => {
+    e.preventDefault();
+    const el = $("#f_comments"), v = el.value.trim();
+    if (/^dead\b/i.test(v)) { toast("Already recorded as dead"); return; }
+    el.value = "Dead." + (v ? " " + v : ""); t.comments = el.value;
+    touch();
+  };
   $("#addFungus").onclick = e => {
     e.preventDefault();
     fungusSheet(speciesText(t) || t.species, f => {
