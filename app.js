@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.48";
+const APP_VERSION = "1.49";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -561,6 +561,7 @@ async function treePage(jobId, treeId) {
   <main>
     <div class="grid2" style="align-items:end">
       <div><label for="f_tag">Tag</label><input id="f_tag" data-f="tag" value="${esc(t.tag)}" autocapitalize="characters" autocomplete="off"></div>
+      <div><label for="f_oldTag">Existing tag on the tree</label><input id="f_oldTag" data-f="oldTag" value="${esc(t.oldTag || "")}" placeholder="if it has one" autocapitalize="characters" autocomplete="off"></div>
       <div class="chips" id="prefix" style="padding-bottom:4px">${(roadside(job) ? ["T", "TG"] : ["T", "G", "H", "W"]).map(p => `<button class="chip" data-p="${p}">${p}</button>`).join("")}</div>
     </div>
     <div id="dupe" class="warn" hidden>Another tree in this survey already has this tag.</div>
@@ -1388,8 +1389,9 @@ async function buildZip(jobId) {
   const withLine = !bs && trees.some(t => t.end && t.end.lat != null);
   const withRoute = !!job.route || trees.some(t => t.direction || t.markerPost);
   const withOwn = trees.some(t => t.ownership || t.landowner);
-  const extraHead = (withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
-  const extra = t => (withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []);
+  const withOld = trees.some(t => t.oldTag);  // a tag already on the tree from an earlier survey – kept apart from our own number
+  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
+  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []);
   const head0 = bs ? BS_HEAD : AMR_HEAD.map(h => h === "Crown Spread (m)" ? crownHead(job) : h).concat(withRisk ? RISK_HEAD : [], withCavat ? ["CAVAT (£)"] : [], withChange ? ["Change Since Last Survey"] : [], withZone ? ["Zone"] : [], withVet ? ["Veteran Features"] : [], withLine ? ["End Grid Ref", "End Latitude", "End Longitude"] : []);
   const head = head0.concat(extraHead);
   const ws = XLSX.utils.aoa_to_sheet([head, ...trees.map(t => treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, withLine).concat(extra(t)))]);
