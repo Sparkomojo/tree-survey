@@ -94,14 +94,18 @@ function defectText(d) {
     const u = (UNITS.find(x => x[0] === d.unit) || UNITS[0])[1];
     s += `, c. ${size}${u === "%" || u === "°" ? "" : " "}${u}`;
   }
+  if (d.choice && d.choiceInText) s += ` – ${d.choice}`;
   if (d.note) s += ` – ${d.note.trim()}`;
   return s;
 }
 
 // Opens the panel. name: the phrase tapped ("" = choose). onAdd(text, details) is called with the sentence.
-// opts: { part: preset "where on the tree", info: html shown at the top (e.g. fungus notes) }
+// opts: { part: preset "where on the tree", info: html shown at the top (e.g. fungus notes),
+//         choice: { label, options, value, inText } – one extra pick (e.g. the ash dieback category); it comes back
+//         as details.choice, and is written into the sentence only when inText is true }
 function defectSheet(name, phrases, onAdd, opts = {}) {
-  const d = { name: name || "", part: opts.part || "", height: "", height2: "", aspect: "", size: "", unit: "mm", note: "" };
+  const d = { name: name || "", part: opts.part || "", height: "", height2: "", aspect: "", size: "", unit: "mm", note: "",
+    choice: (opts.choice && opts.choice.value) || "", choiceInText: !!(opts.choice && opts.choice.inText) };
   const back = document.createElement("div");
   back.className = "sheet-back";
   back.innerHTML = `<div class="sheet" role="dialog" aria-label="Defect details">
@@ -110,6 +114,8 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
     <label for="ds_name">Defect / feature</label>
     <input id="ds_name" list="ds_list" value="${esc(d.name)}" placeholder="e.g. Cavity" autocomplete="off">
     <datalist id="ds_list">${phrases.map(p => `<option value="${esc(p)}">`).join("")}</datalist>
+    ${opts.choice ? `<label>${esc(opts.choice.label)}</label>
+      <div class="chips" id="ds_choice">${opts.choice.options.map(o => `<button class="chip ${o === d.choice ? "on" : ""}" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}
     ${name ? `<button class="btn block" id="ds_plain" style="margin-top:8px">Add “${esc(name)}” without details</button>` :
       `<div class="ds-lib">${DEFECT_SECTIONS.map(([sec, items]) => `<details><summary>${esc(sec)}</summary>
         <div class="chips">${items.map(i => `<button class="chip small" data-lib="${esc(i)}">${esc(i)}</button>`).join("")}</div></details>`).join("")}</div>`}
@@ -186,6 +192,7 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
     update();
   };
   single("#ds_asp", "aspect"); single("#ds_unit", "unit");
+  if (opts.choice) single("#ds_choice", "choice");
   $s("#ds_part").onclick = e => {  // tap one or several places
     const b = e.target.closest(".chip"); if (!b) return;
     const cur = partList(d.part), v = b.dataset.v;
@@ -211,7 +218,12 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
   const close = () => back.remove();
   back.addEventListener("click", e => { if (e.target === back) close(); });
   $s("#ds_cancel").onclick = close;
-  if ($s("#ds_plain")) $s("#ds_plain").onclick = () => { close(); onAdd(name, null); };
+  if ($s("#ds_plain")) $s("#ds_plain").onclick = () => {
+    close();
+    if (!d.choice) return onAdd(name, null);
+    const txt = name + (d.choiceInText ? ` – ${d.choice}` : "");
+    onAdd(txt, { name, choice: d.choice, text: txt });
+  };
   $s("#ds_add").onclick = () => {
     update();
     const txt = defectText(d);

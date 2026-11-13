@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.54";
+const APP_VERSION = "1.55";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -867,8 +867,20 @@ async function treePage(jobId, treeId) {
     touch();
   };
   const stemDia = () => { const n = String(t.dbh || "").match(/\d+(?:\.\d+)?/g); return n && n.length === 1 ? +n[0] : null; };
+  // ash dieback: choose its category in the panel. It sets the tree's Ash dieback box (its own column in the report);
+  // a BS 5837 survey has no such box, so there the category is written into the observation instead.
+  const adbChoice = name => /ash dieback|hymenoscyphus|chalara|\badb\b/i.test(name || "")
+    ? { label: "Ash dieback category", options: ADB.slice(1), value: adbFix(t.adb), inText: !$("#adbwrap") } : null;
+  const adbApply = (pick, details) => {
+    if (!pick || !details || !details.choice) return;
+    t.adb = details.choice;
+    const w = $("#adbwrap");
+    if (w) { w.hidden = false; w.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.v === t.adb)); toast(`Ash dieback set to ${t.adb}`); }
+  };
   if (s.askDetails !== false) app.querySelectorAll("[data-detail]").forEach(b => b.onclick = e => {
-    e.preventDefault(); defectSheet(b.textContent.trim(), s.phrases.obs, addObs, { dbh: stemDia() });
+    e.preventDefault();
+    const name = b.textContent.trim(), pick = adbChoice(name);
+    defectSheet(name, s.phrases.obs, (text, details) => { adbApply(pick, details); addObs(text, details); }, { dbh: stemDia(), choice: pick });
   });
   $("#addDefect").onclick = e => { e.preventDefault(); defectSheet("", s.phrases.obs, addObs, { dbh: stemDia() }); };
   // one tap: "Dead." goes at the front of the observations (no details panel)
@@ -882,10 +894,12 @@ async function treePage(jobId, treeId) {
   $("#addFungus").onclick = e => {
     e.preventDefault();
     fungusSheet(speciesText(t) || t.species, f => {
+      const adbPick = adbChoice(fungusPhrase(f) + " " + (f.sci || ""));
       defectSheet(fungusPhrase(f), s.phrases.obs, (text, details) => {
+        adbApply(adbPick, details);
         addObs(text, details ? Object.assign(details, { fungus: f.sci, significance: f.sig }) : { name: text, fungus: f.sci, significance: f.sig });
         if (f.sig === "High" && !t.recs) toast(`${f.com}: high significance – consider further investigation`, 3500);
-      }, { part: f.part, info: fungusInfo(f) });
+      }, { part: f.part, info: fungusInfo(f), choice: adbPick });
     });
   };
   $("#addPest").onclick = e => {
