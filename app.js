@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.55";
+const APP_VERSION = "1.56";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -44,10 +44,11 @@ const DEFAULT_PHRASES = {
   recs: ["No work required", "Fell", "Fell to ground level", "Remove deadwood", "Crown lift to 6 m over highway",
     "Crown lift to 3 m over footpath", "Crown reduce by 2 m", "Crown thin by 15%", "Sever ivy at base",
     "Remove hanging branch", "Pollard", "Reduce to monolith", "Advanced inspection (sonic tomography)",
-    "Re-inspect in 12 months", "Re-inspect in 18 months", "Monitor"],
+    "Re-inspect in 12 months", "Re-inspect in 18 months", "Monitor", "Manage in line with ash dieback policy"],
   cons: ["Highway", "Footpath", "Public open space", "Property", "Car park", "Overhead lines", "Boundary wall", "Play area"],
   weather: ["Dry", "Overcast", "Sunny", "Light rain", "Light winds", "Good visibility", "Leaf off", "In leaf"],
 };
+const NEW_PHRASES = { recs: ["Manage in line with ash dieback policy"] };
 const LIFE = ["Y", "SM", "EM", "M", "OM", "V"], COND = ["Good", "Fair", "Poor", "Dead"], STRUCT = ["Good", "Fair", "Poor"];
 const RISK_METHODS = ["VALID", "QTRA", "THREATS", "CAVAT"];
 // land ownership; linear routes (road, railway, footpath): which side / direction each tree is on, in the direction of travel
@@ -160,6 +161,14 @@ function usePlan(job, id) { job.planId = id; job.plan = (job.plans || []).find(p
 async function settings() {
   const s = (await DB.get("settings", "main")) || { id: "main", consultant: "", phrases: {} };
   s.phrases = Object.assign({}, DEFAULT_PHRASES, s.phrases || {});
+  // a phrase added to the standard lists after this device saved its own: add it once (deleting it later sticks)
+  let grew = false;
+  for (const [k, list] of Object.entries(NEW_PHRASES)) for (const p of list) {
+    if ((s.phrasesAdded || []).includes(p)) continue;
+    s.phrasesAdded = (s.phrasesAdded || []).concat(p); grew = true;
+    if (!(s.phrases[k] || []).includes(p)) s.phrases[k] = (s.phrases[k] || []).concat(p);
+  }
+  if (grew) { try { await DB.put("settings", s); } catch (e) { } }
   return s;
 }
 
