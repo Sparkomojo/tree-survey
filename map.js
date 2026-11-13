@@ -289,29 +289,61 @@ async function mapPage(jobId, mode, treeId) {
     let pts = (had ? [[+target.lat, +target.lon]] : []).concat((target.via || []).map(p => [+p.lat, +p.lon]), target.end && target.end.lat != null ? [[+target.end.lat, +target.end.lon]] : []);
     let closed = !!target.closed;
     const layer = L.layerGroup().addTo(map);
+    let sel = null;            // the point picked for moving, deleting or adding after
+    const hist = [];           // for Undo
+    const keep = () => { hist.push({ pts: pts.map(p => p.slice()), closed }); if (hist.length > 60) hist.shift(); };
+    const ring = () => closed && pts.length >= 3;
+    const icon = (cls, txt) => L.divIcon({ className: "", html: `<div class="${cls}">${txt || ""}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] });
+    const info = () => {
+      let len = 0; for (let i = 1; i < pts.length; i++) len += L_dist(pts[i - 1], pts[i]);
+      if (ring()) len += L_dist(pts[pts.length - 1], pts[0]);
+      $("#plInfo").textContent = !pts.length ? "No points yet – the first one is the start." : pts.length === 1 ? "1 point (the start). Move the map and add the next."
+        : `${pts.length} points · ${Math.round(len)} m` + (ring() ? ` round · about ${ringArea(pts) >= 10000 ? (ringArea(pts) / 10000).toFixed(2) + " ha" : Math.round(ringArea(pts)) + " m²"}` : "")
+          + (sel != null ? ` · point ${sel + 1} picked` : "");
+      $("#plUndo").disabled = !hist.length;
+      $("#plDel").hidden = $("#plMove").hidden = sel == null;
+      $("#plDel").disabled = pts.length <= 2;
+      $("#plAdd").textContent = sel != null ? `＋ Add after point ${sel + 1}` : "＋ Add point";
+    };
     const show = () => {
       layer.clearLayers();
-      if (pts.length >= 2) (closed && pts.length >= 3 ? L.polygon(pts, { color: "#ff7a1a", weight: 3, fillOpacity: 0.15 }) : L.polyline(pts, { color: "#ff7a1a", weight: 3 })).addTo(layer);
-      pts.forEach((p, i) => L.circleMarker(p, { radius: i === 0 ? 7 : 5, color: "#0a120d", weight: 2, fillColor: i === 0 ? "#ff7a1a" : "#fff", fillOpacity: 1, interactive: false }).addTo(layer));
-      let len = 0; for (let i = 1; i < pts.length; i++) len += L_dist(pts[i - 1], pts[i]);
-      if (closed && pts.length >= 3) len += L_dist(pts[pts.length - 1], pts[0]);
-      $("#plInfo").textContent = !pts.length ? "No points yet – the first one is the start." : pts.length === 1 ? "1 point (the start). Move the map and add the next."
-        : `${pts.length} points · ${Math.round(len)} m` + (closed && pts.length >= 3 ? ` round · about ${ringArea(pts) >= 10000 ? (ringArea(pts) / 10000).toFixed(2) + " ha" : Math.round(ringArea(pts)) + " m²"}` : "");
-      $("#plUndo").disabled = pts.length <= (had ? 1 : 0);
+      let shape = null;
+      if (pts.length >= 2) shape = (ring() ? L.polygon(pts, { color: "#ff7a1a", weight: 3, fillOpacity: 0.15, interactive: false }) : L.polyline(pts, { color: "#ff7a1a", weight: 3, interactive: false })).addTo(layer);
+      // a small ＋ halfway along each side: tap it to put a new point there, then drag it into place
+      const sides = pts.length >= 2 ? pts.length - 1 + (ring() ? 1 : 0) : 0;
+      for (let i = 0; i < sides; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        L.marker([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], { icon: icon("pl-mid", "+"), keyboard: false }).addTo(layer).on("click", () => {
+          keep(); pts.splice(i + 1, 0, [+((a[0] + b[0]) / 2).toFixed(7), +((a[1] + b[1]) / 2).toFixed(7)]); sel = i + 1; show();
+        });
+      }
+      pts.forEach((p, i) => {
+        const m = L.marker(p, { icon: icon("pl-pt" + (i === 0 ? " first" : "") + (i === sel ? " sel" : "")), draggable: true, keyboard: false, zIndexOffset: 500 }).addTo(layer);
+        m.on("click", () => { sel = sel === i ? null : i; show(); });
+        m.on("dragstart", keep);
+        m.on("drag", e => { const ll = e.target.getLatLng(); pts[i] = [+ll.lat.toFixed(7), +ll.lng.toFixed(7)]; if (shape) shape.setLatLngs(pts); info(); });
+        m.on("dragend", () => { sel = i; show(); });
+      });
+      info();
     };
-    panel.innerHTML = `<div class="hint">Move the map so the <b>✛</b> is on the next point of ${esc(target.tag)}, then <b>Add point</b>. Work round in order.</div>
+    panel.innerHTML = `<div class="hint">Put the <b>✛</b> on the next point of ${esc(target.tag)} and tap <b>Add point</b>. To reshape: <b>drag a point</b>, or tap a small <b>＋</b> on a side to add a point there. Tap a point to pick it.</div>
       <div class="meta" id="plInfo"></div>
       <label class="check"><input type="checkbox" id="plClosed" ${closed ? "checked" : ""}> Outline – join the last point back to the start</label>
       <div class="row"><button class="btn primary" id="plAdd">＋ Add point</button><button class="btn" id="plUndo">↶ Undo</button></div>
+      <div class="row"><button class="btn" id="plMove" hidden>Move picked point to ✛</button><button class="btn danger" id="plDel" hidden>Delete picked point</button></div>
       <div class="row"><button class="btn" onclick="location.replace('${backTo}')">Cancel</button><button class="btn primary" id="plDone">✓ Done</button></div>`;
-    $("#plAdd").onclick = () => { const c = map.getCenter(); pts.push([+c.lat.toFixed(7), +c.lng.toFixed(7)]); show(); };
-    $("#plUndo").onclick = () => { if (pts.length > (had ? 1 : 0)) { pts.pop(); show(); } };
-    $("#plClosed").onchange = e => { closed = e.target.checked; show(); };
+    const here = () => { const c = map.getCenter(); return [+c.lat.toFixed(7), +c.lng.toFixed(7)]; };
+    $("#plAdd").onclick = () => { keep(); if (sel != null) { pts.splice(sel + 1, 0, here()); sel++; } else pts.push(here()); show(); };
+    $("#plUndo").onclick = () => { const h = hist.pop(); if (!h) return; pts = h.pts; closed = h.closed; $("#plClosed").checked = closed; sel = null; show(); };
+    $("#plMove").onclick = () => { if (sel == null) return; keep(); pts[sel] = here(); show(); };
+    $("#plDel").onclick = () => { if (sel == null || pts.length <= 2) return; keep(); pts.splice(sel, 1); sel = null; show(); };
+    $("#plClosed").onchange = e => { keep(); closed = e.target.checked; show(); };
     $("#plDone").onclick = async () => {
       if (pts.length < 2) { toast("Add at least two points"); return; }
       if (closed && pts.length < 3) { toast("An outline needs at least three points"); return; }
       const P = p => ({ lat: p[0], lon: p[1], src: "map" });
-      if (!had) { target.lat = pts[0][0]; target.lon = pts[0][1]; target.acc = null; target.grid = OSGB.fromLatLon(target.lat, target.lon).ref;
+      const moved = had && (Math.abs(pts[0][0] - +target.lat) > 1e-7 || Math.abs(pts[0][1] - +target.lon) > 1e-7);  // point 1 was dragged
+      if (!had || moved) { target.lat = pts[0][0]; target.lon = pts[0][1]; target.acc = null; target.grid = OSGB.fromLatLon(target.lat, target.lon).ref;
         target.posSource = "map"; target.posNote = "Placed on map"; target.zone = zoneFor(job, target.lat, target.lon) || target.zone || ""; }
       target.via = pts.slice(1, -1).map(P); if (!target.via.length) delete target.via;
       target.end = P(pts[pts.length - 1]);

@@ -273,3 +273,10 @@ html[data-text="larger"] main:not(:has(#map)), html[data-text="larger"] .bar { z
 .ds-range { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
 .ds-range span { color: var(--muted); }
 .ds-range input { min-width: 0; }
+
+/* drawing a line or outline on the map: points to drag, and a + halfway along each side */
+.pl-pt { width: 22px; height: 22px; margin: 6px; border-radius: 50%; background: #fff; border: 3px solid #0a120d; box-sizing: border-box; }
+.pl-pt.first { background: #ff7a1a; }
+.pl-pt.sel { border-color: #c8102e; box-shadow: 0 0 0 5px rgba(200, 16, 46, .3); }
+.pl-mid { width: 22px; height: 22px; margin: 6px; border-radius: 50%; background: rgba(255, 255, 255, .85); border: 2px dashed #ff7a1a; box-sizing: border-box;
+  color: #b45309; font-weight: 700; font-size: 15px; line-height: 17px; text-align: center; }
