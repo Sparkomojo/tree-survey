@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.57";
+const APP_VERSION = "1.58";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -48,6 +48,7 @@ const DEFAULT_PHRASES = {
   cons: ["Highway", "Footpath", "Public open space", "Property", "Car park", "Overhead lines", "Boundary wall", "Play area"],
   weather: ["Dry", "Overcast", "Sunny", "Light rain", "Light winds", "Good visibility", "Leaf off", "In leaf"],
 };
+const PREFIX_WORD = { TG: "group", G: "group", H: "hedge", W: "woodland" };
 const NEW_PHRASES = { recs: ["Manage in line with ash dieback policy"] };
 const LIFE = ["Y", "SM", "EM", "M", "OM", "V"], COND = ["Good", "Fair", "Poor", "Dead"], STRUCT = ["Good", "Fair", "Poor"];
 const RISK_METHODS = ["VALID", "QTRA", "THREATS", "CAVAT"];
@@ -578,7 +579,7 @@ async function treePage(jobId, treeId) {
     <div class="grid2" style="align-items:end">
       <div><label for="f_tag">Tag</label><input id="f_tag" data-f="tag" value="${esc(t.tag)}" autocapitalize="characters" autocomplete="off"></div>
       <div><label for="f_oldTag">Existing tag on the tree</label><input id="f_oldTag" data-f="oldTag" value="${esc(t.oldTag || "")}" placeholder="if it has one" autocapitalize="characters" autocomplete="off"></div>
-      <div class="chips" id="prefix" style="padding-bottom:4px">${(roadside(job) ? ["T", "TG"] : ["T", "G", "H", "W"]).map(p => `<button class="chip" data-p="${p}">${p}</button>`).join("")}</div>
+      <div class="chips" id="prefix" style="padding-bottom:4px">${(roadside(job) ? ["T", "TG", "W"] : ["T", "G", "H", "W"]).map(p => `<button class="chip" data-p="${p}">${p}${PREFIX_WORD[p] ? ` <span style="font-weight:400">${PREFIX_WORD[p]}</span>` : ""}</button>`).join("")}</div>
     </div>
     <div id="dupe" class="warn" hidden>Another tree in this survey already has this tag.</div>
 
@@ -607,7 +608,7 @@ async function treePage(jobId, treeId) {
         <div class="hint">Works for a single tree, a group or a woodland. The report lists these as ownership to confirm before work is arranged.</div></div>
       <div id="ownWrap" ${t.ownership === "Third party" || t.ownership === "Unclear" ? "" : "hidden"}>${f("landowner", "Landowner / property (if known)", 'placeholder="e.g. Mill Farm, or 12 Station Road" autocomplete="off"')}
         <div class="hint">Trees on third-party land get a letter to the owner (Third-party trees on the PC). Name the property or owner if you can – trees with the same name share a letter.</div></div>` : ""}
-    <details class="more" id="lineBox" ${t.end || /^(G|H|TG|W)/i.test(t.tag || "") ? "open" : ""}><summary>Hedge / group as a line or an outline</summary>
+    <details class="more" id="lineBox" ${t.end || /^(G|H|TG|W)/i.test(t.tag || "") ? "open" : ""}><summary>Hedge / group / woodland as a line or an outline</summary>
       <div class="hint">The location above is the <b>start</b>. Walk to the other end and record the <b>end</b>; add a bend wherever it changes direction. Or <b>draw it on the map</b> – add as many points as you need, in order. Tick <i>outline</i> to join the last point back to the start and show the edge of a group or woodland.</div>
       <div class="row"><button class="btn small primary" id="lineDraw">🗺 Draw on the map – several points</button></div>
       <label class="check"><input type="checkbox" id="lineClosed" ${t.closed ? "checked" : ""}> Outline – join the last point back to the start (edge of a group or woodland)</label>
@@ -952,7 +953,11 @@ async function treePage(jobId, treeId) {
     const allNums = all.filter(x => x.id !== t.id).map(x => tagKey(x.tag)[1]);
     const start = (job.firstTag || roadside(job)) ? (allNums.length ? Math.max(...allNums) + 1 : tagKey(job.firstTag || "1")[1] || 1) : 1;
     if (roadside(job)) nums.length = 0;  // one number series across T and TG
-    t.tag = p + (nums.length ? Math.max(...nums) + 1 : start); $("#f_tag").value = t.tag; checkDupe(); touch();
+    t.tag = p + (nums.length ? Math.max(...nums) + 1 : start); $("#f_tag").value = t.tag; checkDupe();
+    if (p !== "T") $("#lineBox").open = true;
+    if (p === "W" && !t.end && !(t.via || []).length) { t.closed = true; $("#lineClosed").checked = true; lineShow(); }  // a woodland is drawn as an outline
+    if (p !== "T") { $("#moreSpHint").hidden = false; }
+    touch();
   };
   const rec = $("#recent"); if (rec) rec.onclick = e => { const b = e.target.closest(".chip"); if (!b) return; t.species = b.dataset.sp; $("#f_species").value = t.species; $("#f_species").dispatchEvent(new Event("input")); copyOffer(t.species); };
   // --- fill in from an earlier tree
