@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.59";
+const APP_VERSION = "1.60";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -434,7 +434,8 @@ async function jobPage(id, treesOnly) {
   if (isWorks(job)) return worksJobPage(job);  // a contractor's works order (works pack from the PC)
   if (isQuote(job)) return quotePage(job);      // a site visit before quoting (quote.js)
   const bo = bolts(job), feats = await DB.by("features", "job", id);
-  const trees = (await DB.by("trees", "job", id)).sort(byTag);
+  // the list runs in the order the trees were recorded, whatever their letters (T, TG, W…); the export stays in tag order
+  const trees = (await DB.by("trees", "job", id)).sort((a, b) => (a.created || a.updated || 0) - (b.created || b.updated || 0) || byTag(a, b));
   const photos = await DB.by("photos", "job", id);
   const pc = tid => photos.filter(p => p.treeId === tid).length;
   const sitePc = photos.filter(p => !p.treeId).length;
