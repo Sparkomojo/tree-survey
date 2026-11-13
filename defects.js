@@ -12,6 +12,10 @@ const ASPECTS = [["NW", "north-west"], ["N", "north"], ["NE", "north-east"], ["W
 const PARTS = [["Root plate", "at the root plate"], ["Base", "at the base"], ["Stem", "on the stem"],
   ["Main union", "at the main union"], ["Scaffold limb", "on a scaffold limb"], ["Branch", "on a branch"],
   ["Crown", "in the crown"], ["Upper crown", "in the upper crown"], ["Lower crown", "in the lower crown"]];
+// "Where on the tree" can be more than one place: kept as "Root plate, Stem", always in the order above (ground up)
+const partList = v => { const got = String(v || "").split(/\s*[,+]\s*/); return PARTS.filter(p => got.includes(p[0])).map(p => p[0]); };
+const partPhrase = v => { const ph = partList(v).map(n => PARTS.find(p => p[0] === n)[1]);
+  return ph.length > 1 ? ph.slice(0, -1).join(", ") + " and " + ph[ph.length - 1] : ph[0] || ""; };
 const UNITS = [["mm", "mm"], ["mm Ø", "mm diameter"], ["cm", "cm"], ["m", "m"], ["%", "%"], ["°", "°"]];
 const aspectWord = a => (ASPECTS.find(x => x[0] === a) || [, ""])[1];
 
@@ -77,8 +81,8 @@ function defectText(d) {
   if (lean) {
     if (d.aspect) s += ` to the ${aspectWord(d.aspect)}`;
   } else {
-    const part = PARTS.find(p => p[0] === d.part);
-    if (part) s += " " + part[1];
+    const where = partPhrase(d.part);
+    if (where) s += " " + where;
     // a height, or a range of heights ("from 1.5 to 4 m") – always written low to high
     const h1 = parseFloat(d.height), h2 = parseFloat(d.height2);
     if (d.height && d.height2 && h1 !== h2 && !isNaN(h1) && !isNaN(h2)) s += ` from ${h1 < h2 ? d.height : d.height2} to ${h1 < h2 ? d.height2 : d.height} m`;
@@ -123,7 +127,7 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
         <div><label for="ds_R">Stem radius R (mm)</label><input id="ds_R" inputmode="decimal" autocomplete="off" value="${opts.dbh ? Math.round(opts.dbh / 2) : ""}"></div></div>
       <div class="hint" id="ds_tr"></div>
     </div>
-    <label>Where on the tree</label>
+    <label>Where on the tree <span style="font-weight:400;color:var(--muted)">– tap one or more</span></label>
     <div class="chips" id="ds_part">${PARTS.map(p => `<button class="chip" data-v="${p[0]}">${p[0]}</button>`).join("")}</div>
     <div class="ds-row">
       <div><label for="ds_h">Height (m)</label>
@@ -181,7 +185,14 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
     $s(id).querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.v === d[key]));
     update();
   };
-  single("#ds_part", "part"); single("#ds_asp", "aspect"); single("#ds_unit", "unit");
+  single("#ds_asp", "aspect"); single("#ds_unit", "unit");
+  $s("#ds_part").onclick = e => {  // tap one or several places
+    const b = e.target.closest(".chip"); if (!b) return;
+    const cur = partList(d.part), v = b.dataset.v;
+    d.part = partList((cur.includes(v) ? cur.filter(x => x !== v) : cur.concat(v)).join(", ")).join(", ");
+    $s("#ds_part").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", partList(d.part).includes(c.dataset.v)));
+    update();
+  };
   const pickOne = (id, obj, key) => $s(id).onclick = e => {
     const b = e.target.closest(".chip"); if (!b) return; e.preventDefault();
     obj[key] = obj[key] === b.dataset.v ? "" : b.dataset.v;
@@ -194,7 +205,8 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
     const b = e.target.closest("[data-lib]"); if (!b) return; e.preventDefault();
     $s("#ds_name").value = b.dataset.lib; lib.querySelectorAll("details").forEach(x => x.open = false); update();
   };
-  if (d.part) $s(`#ds_part .chip[data-v="${d.part}"]`)?.classList.add("on");
+  d.part = partList(d.part).join(", ");
+  $s("#ds_part").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", partList(d.part).includes(c.dataset.v)));
   back.querySelectorAll("input").forEach(i => i.addEventListener("input", update));
   const close = () => back.remove();
   back.addEventListener("click", e => { if (e.target === back) close(); });
