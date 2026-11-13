@@ -142,12 +142,13 @@ async function buildMap(el, job, trees, opts = {}) {
   for (const t of trees) {
     if (t.lat == null || t.lat === "") continue;
     const ll = [+t.lat, +t.lon], col = treeColour(job, t), r = crownRadius(job, t);
+    const tap = () => opts.onTree ? opts.onTree(t, ll) : null;  // the dot, its label, a wide area round it, or a group's shape
     if (t.end && t.end.lat != null) {  // hedge / roadside group: start, bends, end
       const line = [ll].concat((t.via || []).map(p => [+p.lat, +p.lon]), [[+t.end.lat, +t.end.lon]]);
       if (t.closed && line.length >= 3) {  // the outline of a group or woodland
-        L.polygon(line, { color: col, weight: 2, dashArray: "4 4", fillColor: col, fillOpacity: 0.18, interactive: false }).addTo(treeLayer);
+        L.polygon(line, { color: col, weight: 2, dashArray: "4 4", fillColor: col, fillOpacity: 0.18, interactive: !!opts.onTree }).addTo(treeLayer).on("click", tap);
       } else {
-        L.polyline(line, { color: col, weight: Math.max(4, Math.min(14, (r || 2) * 2)), opacity: 0.45, lineCap: "round", interactive: false }).addTo(treeLayer);
+        L.polyline(line, { color: col, weight: Math.max(4, Math.min(14, (r || 2) * 2)), opacity: 0.45, lineCap: "round", interactive: !!opts.onTree }).addTo(treeLayer).on("click", tap);
         L.polyline(line, { color: col, weight: 2, dashArray: "4 4", interactive: false }).addTo(treeLayer);
       }
       placed.push(line[line.length - 1]);
@@ -155,8 +156,13 @@ async function buildMap(el, job, trees, opts = {}) {
     if (r) L.circle(ll, { radius: r, color: col, weight: 1.5, fillOpacity: 0.15, interactive: false }).addTo(treeLayer);
     const wo = job.type === "WORKS";  // works orders: the dot shows the item's status
     const m = L.circleMarker(ll, { radius: wo ? 8 : 5, color: "#fff", weight: wo ? 2 : 1.5, fillColor: wo ? col : "#111", fillOpacity: 1 }).addTo(treeLayer);
-    m.bindTooltip(esc(t.tag), { permanent: true, direction: "right", className: "tlabel", offset: [6, 0] });
-    m.on("click", () => opts.onTree ? opts.onTree(t, ll) : null);
+    // a finger-sized invisible target under the small dot, so a tap near it counts
+    L.circleMarker(ll, { radius: 20, stroke: false, fillColor: "#000", fillOpacity: 0, interactive: !!opts.onTree, bubblingMouseEvents: false }).addTo(treeLayer).on("click", tap);
+    m.bringToFront();
+    m.bindTooltip(esc(t.tag), { permanent: true, direction: "right", className: "tlabel", offset: [6, 0], interactive: !!opts.onTree });
+    m.on("click", tap);
+    const tip = m.getTooltip();
+    if (tip && opts.onTree) { tip.on("click", tap); const el = tip.getElement && tip.getElement(); if (el) { el.style.pointerEvents = "auto"; el.style.cursor = "pointer"; L.DomEvent.on(el, "click", e => { L.DomEvent.stop(e); tap(); }); } }
     placed.push(ll);
   }
   // starting view: trees, else the plan, else where you are
