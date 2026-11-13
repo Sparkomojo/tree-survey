@@ -878,3 +878,13 @@ Mixed species - Mixed species
 Mixed hedge - Mixed hedge
 Mixed native hedge - Mixed native hedge
 Mixed shrubs - Mixed shrubs`.split("\n");
+// The species itself comes before its varieties and cultivars in the pick-list (Fraxinus excelsior before 'Jaspidea'
+// and 'Pendula') – the list is otherwise alphabetical, which puts a quote mark ahead of the plain name.
+(() => {
+  const bot = x => x.split(" - ")[0];
+  for (let i = 0; i < SPECIES.length; i++) {
+    const b = bot(SPECIES[i]) + " ";
+    const j = SPECIES.findIndex(x => bot(x).startsWith(b));
+    if (j >= 0 && j < i) SPECIES.splice(j, 0, SPECIES.splice(i, 1)[0]);
+  }
+})();
