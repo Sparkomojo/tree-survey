@@ -144,8 +144,12 @@ async function buildMap(el, job, trees, opts = {}) {
     const ll = [+t.lat, +t.lon], col = treeColour(job, t), r = crownRadius(job, t);
     if (t.end && t.end.lat != null) {  // hedge / roadside group: start, bends, end
       const line = [ll].concat((t.via || []).map(p => [+p.lat, +p.lon]), [[+t.end.lat, +t.end.lon]]);
-      L.polyline(line, { color: col, weight: Math.max(4, Math.min(14, (r || 2) * 2)), opacity: 0.45, lineCap: "round", interactive: false }).addTo(treeLayer);
-      L.polyline(line, { color: col, weight: 2, dashArray: "4 4", interactive: false }).addTo(treeLayer);
+      if (t.closed && line.length >= 3) {  // the outline of a group or woodland
+        L.polygon(line, { color: col, weight: 2, dashArray: "4 4", fillColor: col, fillOpacity: 0.18, interactive: false }).addTo(treeLayer);
+      } else {
+        L.polyline(line, { color: col, weight: Math.max(4, Math.min(14, (r || 2) * 2)), opacity: 0.45, lineCap: "round", interactive: false }).addTo(treeLayer);
+        L.polyline(line, { color: col, weight: 2, dashArray: "4 4", interactive: false }).addTo(treeLayer);
+      }
       placed.push(line[line.length - 1]);
     } else
     if (r) L.circle(ll, { radius: r, color: col, weight: 1.5, fillOpacity: 0.15, interactive: false }).addTo(treeLayer);
@@ -200,7 +204,7 @@ async function mapPage(jobId, mode, treeId) {
   const target = treeId && treeId !== "new" ? trees.find(t => t.id === treeId) : null;
   const backTo = target ? `#/job/${jobId}/tree/${target.id}` : `#/job/${jobId}`;
   const title = mode === "pick" ? `Place ${target ? esc(target.tag) : "tree"}` : mode === "pickend" ? `End of ${target ? esc(target.tag) : "line"}`
-    : mode === "pickvia" ? `Bend in ${target ? esc(target.tag) : "line"}` : mode === "measure" ? `Measure ${target ? esc(target.tag) : "tree"}` : "Map";
+    : mode === "pickvia" ? `Bend in ${target ? esc(target.tag) : "line"}` : mode === "pickline" ? `Draw ${target ? esc(target.tag) : "line"}` : mode === "measure" ? `Measure ${target ? esc(target.tag) : "tree"}` : "Map";
   app.innerHTML = mapShell(title, esc(job.site), `location.replace('${backTo}')`);
   leaveHook = async () => closeMap();
   const others = trees.filter(t => !target || t.id !== target.id);
@@ -279,6 +283,45 @@ async function mapPage(jobId, mode, treeId) {
     return;
   }
   cross.hidden = false;
+  if (mode === "pickline" && target) {
+    // several points, one after another: point 1 is the tree's own position, the last is the end, the rest are bends
+    const had = target.lat != null && target.lat !== "";
+    let pts = (had ? [[+target.lat, +target.lon]] : []).concat((target.via || []).map(p => [+p.lat, +p.lon]), target.end && target.end.lat != null ? [[+target.end.lat, +target.end.lon]] : []);
+    let closed = !!target.closed;
+    const layer = L.layerGroup().addTo(map);
+    const show = () => {
+      layer.clearLayers();
+      if (pts.length >= 2) (closed && pts.length >= 3 ? L.polygon(pts, { color: "#ff7a1a", weight: 3, fillOpacity: 0.15 }) : L.polyline(pts, { color: "#ff7a1a", weight: 3 })).addTo(layer);
+      pts.forEach((p, i) => L.circleMarker(p, { radius: i === 0 ? 7 : 5, color: "#0a120d", weight: 2, fillColor: i === 0 ? "#ff7a1a" : "#fff", fillOpacity: 1, interactive: false }).addTo(layer));
+      let len = 0; for (let i = 1; i < pts.length; i++) len += L_dist(pts[i - 1], pts[i]);
+      if (closed && pts.length >= 3) len += L_dist(pts[pts.length - 1], pts[0]);
+      $("#plInfo").textContent = !pts.length ? "No points yet – the first one is the start." : pts.length === 1 ? "1 point (the start). Move the map and add the next."
+        : `${pts.length} points · ${Math.round(len)} m` + (closed && pts.length >= 3 ? ` round · about ${ringArea(pts) >= 10000 ? (ringArea(pts) / 10000).toFixed(2) + " ha" : Math.round(ringArea(pts)) + " m²"}` : "");
+      $("#plUndo").disabled = pts.length <= (had ? 1 : 0);
+    };
+    panel.innerHTML = `<div class="hint">Move the map so the <b>✛</b> is on the next point of ${esc(target.tag)}, then <b>Add point</b>. Work round in order.</div>
+      <div class="meta" id="plInfo"></div>
+      <label class="check"><input type="checkbox" id="plClosed" ${closed ? "checked" : ""}> Outline – join the last point back to the start</label>
+      <div class="row"><button class="btn primary" id="plAdd">＋ Add point</button><button class="btn" id="plUndo">↶ Undo</button></div>
+      <div class="row"><button class="btn" onclick="location.replace('${backTo}')">Cancel</button><button class="btn primary" id="plDone">✓ Done</button></div>`;
+    $("#plAdd").onclick = () => { const c = map.getCenter(); pts.push([+c.lat.toFixed(7), +c.lng.toFixed(7)]); show(); };
+    $("#plUndo").onclick = () => { if (pts.length > (had ? 1 : 0)) { pts.pop(); show(); } };
+    $("#plClosed").onchange = e => { closed = e.target.checked; show(); };
+    $("#plDone").onclick = async () => {
+      if (pts.length < 2) { toast("Add at least two points"); return; }
+      if (closed && pts.length < 3) { toast("An outline needs at least three points"); return; }
+      const P = p => ({ lat: p[0], lon: p[1], src: "map" });
+      if (!had) { target.lat = pts[0][0]; target.lon = pts[0][1]; target.acc = null; target.grid = OSGB.fromLatLon(target.lat, target.lon).ref;
+        target.posSource = "map"; target.posNote = "Placed on map"; target.zone = zoneFor(job, target.lat, target.lon) || target.zone || ""; }
+      target.via = pts.slice(1, -1).map(P); if (!target.via.length) delete target.via;
+      target.end = P(pts[pts.length - 1]);
+      if (closed) target.closed = true; else delete target.closed;
+      target.updated = Date.now(); await DB.put("trees", target); job.updated = Date.now(); await DB.put("jobs", job);
+      location.replace(backTo);
+    };
+    show();
+    return;
+  }
   if ((mode === "pickend" || mode === "pickvia") && target) {
     panel.innerHTML = `<div class="hint">Move the map so the <b>✛</b> is on the ${mode === "pickend" ? "<b>far end</b>" : "<b>bend</b>"} of ${esc(target.tag)}.</div>
       <div class="row"><button class="btn" onclick="location.replace('${backTo}')">Cancel</button><button class="btn primary" id="use">Use this spot</button></div>`;

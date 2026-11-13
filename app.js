@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.53";
+const APP_VERSION = "1.54";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -473,6 +473,13 @@ function nextTag(trees, job) {
 }
 
 // metres between two [lat, lon] points (good enough for a hedge length)
+// area in m² of a ring of [lat, lon] points (British National Grid, shoelace)
+function ringArea(pts) {
+  const en = pts.map(p => OSGB.fromLatLon(+p[0], +p[1]));
+  let a = 0;
+  for (let i = 0; i < en.length; i++) { const j = (i + 1) % en.length; a += en[i].E * en[j].N - en[j].E * en[i].N; }
+  return Math.abs(a) / 2;
+}
 function L_dist(a, b) {
   const R = 6371000, r = Math.PI / 180, dLat = (b[0] - a[0]) * r, dLon = (b[1] - a[1]) * r;
   const x = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLon / 2) ** 2;
@@ -591,8 +598,10 @@ async function treePage(jobId, treeId) {
         <div class="hint">Works for a single tree, a group or a woodland. The report lists these as ownership to confirm before work is arranged.</div></div>
       <div id="ownWrap" ${t.ownership === "Third party" || t.ownership === "Unclear" ? "" : "hidden"}>${f("landowner", "Landowner / property (if known)", 'placeholder="e.g. Mill Farm, or 12 Station Road" autocomplete="off"')}
         <div class="hint">Trees on third-party land get a letter to the owner (Third-party trees on the PC). Name the property or owner if you can – trees with the same name share a letter.</div></div>` : ""}
-    <details class="more" id="lineBox" ${t.end || /^(G|H|TG|W)/i.test(t.tag || "") ? "open" : ""}><summary>Hedge / group as a line (start and end)</summary>
-      <div class="hint">The location above is the <b>start</b>. Walk to the other end and record the <b>end</b>; add a bend wherever it changes direction. The plan draws it as a band its crown-spread wide.</div>
+    <details class="more" id="lineBox" ${t.end || /^(G|H|TG|W)/i.test(t.tag || "") ? "open" : ""}><summary>Hedge / group as a line or an outline</summary>
+      <div class="hint">The location above is the <b>start</b>. Walk to the other end and record the <b>end</b>; add a bend wherever it changes direction. Or <b>draw it on the map</b> – add as many points as you need, in order. Tick <i>outline</i> to join the last point back to the start and show the edge of a group or woodland.</div>
+      <div class="row"><button class="btn small primary" id="lineDraw">🗺 Draw on the map – several points</button></div>
+      <label class="check"><input type="checkbox" id="lineClosed" ${t.closed ? "checked" : ""}> Outline – join the last point back to the start (edge of a group or woodland)</label>
       <div class="card"><div class="status"><div class="big" id="endRef">${t.end ? esc(OSGB.fromLatLon(+t.end.lat, +t.end.lon).ref) : "No end yet"}</div>
         <div class="meta" id="lineMeta"></div></div></div>
       <div class="row"><button class="btn small" id="endGps">📍 End – GPS here</button><button class="btn small" id="endMap">🗺 End on map</button></div>
@@ -1052,8 +1061,12 @@ async function treePage(jobId, treeId) {
     const pts = t.lat != null && t.lat !== "" && t.end ? [[+t.lat, +t.lon]].concat((t.via || []).map(p => [+p.lat, +p.lon]), [[+t.end.lat, +t.end.lon]]) : null;
     let len = 0;
     if (pts) for (let i = 1; i < pts.length; i++) len += L_dist(pts[i - 1], pts[i]);
+    const ring = pts && t.closed && pts.length >= 3;
+    if (ring) len += L_dist(pts[pts.length - 1], pts[0]);
     $("#lineMeta").textContent = !t.end ? ((t.via || []).length ? `${t.via.length} bend(s) – now record the end` : "Record the end of the hedge / group")
-      : !pts ? "Record the start (the location above) too" : `${Math.round(len)} m long` + ((t.via || []).length ? ` · ${t.via.length} bend(s)` : "") + (t.end.acc ? ` · end ±${Math.round(t.end.acc)} m` : "");
+      : !pts ? "Record the start (the location above) too"
+      : ring ? `Outline of ${pts.length} points · ${Math.round(len)} m round · about ${ringArea(pts) >= 10000 ? (ringArea(pts) / 10000).toFixed(2) + " ha" : Math.round(ringArea(pts)) + " m²"}`
+      : `${Math.round(len)} m long` + ((t.via || []).length ? ` · ${t.via.length} bend(s)` : "") + (t.closed ? " · an outline needs at least 3 points" : "") + (t.end.acc ? ` · end ±${Math.round(t.end.acc)} m` : "");
     $("#lineClear").hidden = !(t.end || (t.via || []).length);
   };
   const linePoint = (cb, label) => {
@@ -1068,7 +1081,9 @@ async function treePage(jobId, treeId) {
   $("#viaGps").onclick = e => { e.preventDefault(); linePoint(p => { t.via = (t.via || []).concat([p]); }, "bend"); };
   $("#endMap").onclick = e => { e.preventDefault(); toMap("pickend"); };
   $("#viaMap").onclick = e => { e.preventDefault(); toMap("pickvia"); };
-  $("#lineClear").onclick = e => { e.preventDefault(); if (confirm("Clear the end and bends of this line?")) { delete t.end; delete t.via; lineShow(); touch(); } };
+  $("#lineDraw").onclick = e => { e.preventDefault(); toMap("pickline"); };
+  $("#lineClosed").onchange = e => { if (e.target.checked) t.closed = true; else delete t.closed; lineShow(); touch(); };
+  $("#lineClear").onclick = e => { e.preventDefault(); if (confirm("Clear the end and bends of this line?")) { delete t.end; delete t.via; delete t.closed; $("#lineClosed").checked = false; lineShow(); touch(); } };
   lineShow();
   const lineOpen = () => { if (/^(G|H|TG|W)/i.test($("#f_tag").value)) $("#lineBox").open = true; };
   $("#f_tag").addEventListener("input", lineOpen);
@@ -1397,9 +1412,12 @@ async function buildZip(jobId) {
   const withLine = !bs && trees.some(t => t.end && t.end.lat != null);
   const withRoute = !!job.route || trees.some(t => t.direction || t.markerPost);
   const withOwn = trees.some(t => t.ownership || t.landowner);
-  const withOld = trees.some(t => t.oldTag);  // a tag already on the tree from an earlier survey – kept apart from our own number
-  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
-  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []);
+  const withOld = trees.some(t => t.oldTag);
+  const linePts = t => t.end && t.end.lat != null && ((t.via || []).length || t.closed)
+    ? [[t.lat, t.lon]].concat((t.via || []).map(p => [p.lat, p.lon]), [[t.end.lat, t.end.lon]]).map(p => `${(+p[0]).toFixed(6)} ${(+p[1]).toFixed(6)}`).join("; ") : "";
+  const withPts = trees.some(t => linePts(t));  // a tag already on the tree from an earlier survey – kept apart from our own number
+  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
+  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []);
   const head0 = bs ? BS_HEAD : AMR_HEAD.map(h => h === "Crown Spread (m)" ? crownHead(job) : h).concat(withRisk ? RISK_HEAD : [], withCavat ? ["CAVAT (£)"] : [], withChange ? ["Change Since Last Survey"] : [], withZone ? ["Zone"] : [], withVet ? ["Veteran Features"] : [], withLine ? ["End Grid Ref", "End Latitude", "End Longitude"] : []);
   const head = head0.concat(extraHead);
   const ws = XLSX.utils.aoa_to_sheet([head, ...trees.map(t => treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, withLine).concat(extra(t)))]);
