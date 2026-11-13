@@ -79,7 +79,10 @@ function defectText(d) {
   } else {
     const part = PARTS.find(p => p[0] === d.part);
     if (part) s += " " + part[1];
-    if (d.height) s += ` at ${d.height} m`;
+    // a height, or a range of heights ("from 1.5 to 4 m") – always written low to high
+    const h1 = parseFloat(d.height), h2 = parseFloat(d.height2);
+    if (d.height && d.height2 && h1 !== h2 && !isNaN(h1) && !isNaN(h2)) s += ` from ${h1 < h2 ? d.height : d.height2} to ${h1 < h2 ? d.height2 : d.height} m`;
+    else if (d.height || d.height2) s += ` at ${d.height || d.height2} m`;
     if (d.aspect) s += ` on the ${aspectWord(d.aspect)} side`;
   }
   if (d.size) {
@@ -94,7 +97,7 @@ function defectText(d) {
 // Opens the panel. name: the phrase tapped ("" = choose). onAdd(text, details) is called with the sentence.
 // opts: { part: preset "where on the tree", info: html shown at the top (e.g. fungus notes) }
 function defectSheet(name, phrases, onAdd, opts = {}) {
-  const d = { name: name || "", part: opts.part || "", height: "", aspect: "", size: "", unit: "mm", note: "" };
+  const d = { name: name || "", part: opts.part || "", height: "", height2: "", aspect: "", size: "", unit: "mm", note: "" };
   const back = document.createElement("div");
   back.className = "sheet-back";
   back.innerHTML = `<div class="sheet" role="dialog" aria-label="Defect details">
@@ -123,7 +126,9 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
     <label>Where on the tree</label>
     <div class="chips" id="ds_part">${PARTS.map(p => `<button class="chip" data-v="${p[0]}">${p[0]}</button>`).join("")}</div>
     <div class="ds-row">
-      <div><label for="ds_h">Height (m)</label><input id="ds_h" inputmode="decimal" autocomplete="off" placeholder="1.5"></div>
+      <div><label for="ds_h">Height (m)</label>
+        <div class="ds-range"><input id="ds_h" inputmode="decimal" autocomplete="off" placeholder="1.5" aria-label="Height, or from"><span>to</span><input id="ds_h2" inputmode="decimal" autocomplete="off" placeholder="–" aria-label="Height to (optional)"></div>
+        <div class="hint">One height, or a range: fill in both.</div></div>
       <div><label>Side / direction</label><div class="compass" id="ds_asp">${ASPECTS.map(a => a[0]
         ? `<button class="chip" data-v="${a[0]}">${a[0]}</button>` : `<span class="hub">✛</span>`).join("")}</div></div>
     </div>
@@ -149,7 +154,9 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
     return bits.join("; ");
   };
   const update = () => {
-    d.name = $s("#ds_name").value; d.height = $s("#ds_h").value.trim().replace(",", ".");
+    d.name = $s("#ds_name").value;
+    const hs = $s("#ds_h").value.trim().replace(/,/g, ".").split(/\s+|\s*(?:-|–|to)\s*/).filter(Boolean);  // "1.5 4" in the first box is a range too
+    d.height = hs[0] || ""; d.height2 = $s("#ds_h2").value.trim().replace(",", ".") || hs[1] || "";
     d.size = $s("#ds_size").value.trim().replace(/(\d)\s+(\d)/g, "$1 x $2");
     const lean = /\blean/i.test(d.name);
     $s("#ds_part").closest("div").style.opacity = lean ? 0.4 : 1;
