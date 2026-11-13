@@ -135,6 +135,7 @@ async function buildMap(el, job, trees, opts = {}) {
   const treeLayer = L.layerGroup().addTo(map);
   overlays["Trees"] = treeLayer;
   if (opts.features && typeof drawFeatures === "function") drawFeatures(map, opts.features, overlays, opts.onFeature);
+  drawNotes(map, job, overlays, opts.onNote, opts.skipNote);
   L.control.layers(bases, overlays, { position: "topright" }).addTo(map);
   L.control.scale({ imperial: false, position: "bottomleft" }).addTo(map);
 
@@ -202,8 +203,118 @@ const mapShell = (title, sub, back) => `
   <div class="mapbox"><div id="map"></div><div class="cross" id="cross" hidden></div></div>
   <div class="panel" id="panel"></div></div>`;
 
+// ---------------------------------------------------------------- map notes (annotations)
+// A note is a point, a line, an area or a text label drawn on the map, kept with the survey (job.notes). Each has a
+// label, an optional longer note, a colour and a tick: "show on plans and outputs". Unticked notes are private field
+// notes – they travel in the export but the PC leaves them off every plan, drawing and GIS file.
+const NOTE_KINDS = [["point", "📍 Point"], ["line", "〰 Line"], ["area", "▱ Area"], ["text", "🅣 Text label"]];
+const NOTE_COLOURS = [["Orange", "#e07000"], ["Red", "#c8102e"], ["Blue", "#1f6fb2"], ["Green", "#2f6b3a"], ["Purple", "#7b3fa0"], ["Black", "#222222"]];
+function drawNotes(map, job, overlays, onNote, skipId) {
+  const notes = (job.notes || []).filter(n => n.id !== skipId && (n.pts || []).length);
+  if (!notes.length) return;
+  const lay = L.layerGroup().addTo(map);
+  for (const n of notes) {
+    const pts = n.pts.map(p => [+p[0], +p[1]]), col = n.colour || NOTE_COLOURS[0][1], dash = n.show ? null : "2 6";
+    const tap = () => onNote ? onNote(n) : null;
+    let shape;
+    if (n.kind === "line" && pts.length >= 2) shape = L.polyline(pts, { color: col, weight: 4, dashArray: dash, interactive: !!onNote });
+    else if (n.kind === "area" && pts.length >= 3) shape = L.polygon(pts, { color: col, weight: 2.5, dashArray: dash, fillColor: col, fillOpacity: 0.14, interactive: !!onNote });
+    else if (n.kind === "text") shape = L.circleMarker(pts[0], { radius: 14, stroke: false, fillOpacity: 0, interactive: !!onNote });
+    else shape = L.circleMarker(pts[0], { radius: 8, color: "#fff", weight: 2, fillColor: col, fillOpacity: 1, interactive: !!onNote });
+    shape.addTo(lay).on("click", tap);
+    shape.bindTooltip((n.show ? "" : "🔒 ") + esc(n.label || "Note"), { permanent: true, direction: n.kind === "point" ? "right" : "center", className: "tlabel notelabel", offset: n.kind === "point" ? [8, 0] : [0, 0], interactive: !!onNote });
+    const tip = shape.getTooltip(), el = tip && tip.getElement && tip.getElement();
+    if (el) { el.style.color = col; if (onNote) { el.style.pointerEvents = "auto"; el.style.cursor = "pointer"; L.DomEvent.on(el, "click", e => { L.DomEvent.stop(e); tap(); }); } }
+  }
+  overlays["Map notes"] = lay;
+}
+
+// add or edit one note: #/job/<id>/map/note/<noteId | new>
+async function noteEditor(jobId, noteId) {
+  const job = await DB.get("jobs", jobId);
+  if (!job) return go("#/");
+  const backTo = `#/job/${jobId}/map`;
+  const old = (job.notes || []).find(n => n.id === noteId);
+  const n = old ? JSON.parse(JSON.stringify(old)) : { id: uid(), kind: "point", label: "", note: "", colour: NOTE_COLOURS[0][1], show: false, pts: [], created: Date.now() };
+  app.innerHTML = mapShell(old ? "Map note" : "New map note", esc(job.site), `location.replace('${backTo}')`);
+  leaveHook = async () => closeMap();
+  const trees = await DB.by("trees", "job", jobId);
+  const first = n.pts[0] ? [+n.pts[0][0], +n.pts[0][1]] : null;
+  const { map } = await buildMap($("#map"), job, trees, { center: first, zoom: first ? 19 : undefined, features: await DB.by("features", "job", jobId), skipNote: n.id });
+  $("#meBtn").onclick = () => map._me ? map.setView(map._me, Math.max(map.getZoom(), 19)) : locateOnce(map);
+  $("#cross").hidden = false;
+  const panel = $("#panel"), layer = L.layerGroup().addTo(map);
+  let pts = n.pts.map(p => [+p[0], +p[1]]), sel = null;
+  const hist = [];
+  const keep = () => { hist.push(pts.map(p => p.slice())); if (hist.length > 60) hist.shift(); };
+  const many = () => n.kind === "line" || n.kind === "area";
+  const icon = (cls, txt) => L.divIcon({ className: "", html: `<div class="${cls}">${txt || ""}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] });
+  const here = () => { const c = map.getCenter(); return [+c.lat.toFixed(7), +c.lng.toFixed(7)]; };
+  panel.innerHTML = `
+    <div class="chips" id="nKind">${NOTE_KINDS.map(([k, t]) => `<button class="chip ${n.kind === k ? "on" : ""}" data-v="${k}">${t}</button>`).join("")}</div>
+    <label for="nLabel">Label (shown on the map)</label><input id="nLabel" value="${esc(n.label)}" placeholder="e.g. Locked gate" autocomplete="off" maxlength="60">
+    <label for="nNote">Note (optional)</label><textarea id="nNote" rows="2" placeholder="Anything more to remember">${esc(n.note || "")}</textarea>
+    <div class="chips" id="nCol">${NOTE_COLOURS.map(([t, c]) => `<button class="chip ${n.colour === c ? "on" : ""}" data-v="${c}" title="${t}" style="border-left:10px solid ${c}">${t}</button>`).join("")}</div>
+    <label class="check"><input type="checkbox" id="nShow" ${n.show ? "checked" : ""}> Show on plans and outputs <span style="font-weight:400">(leave unticked to keep it as a private field note)</span></label>
+    <div class="meta" id="nInfo"></div>
+    <div class="row"><button class="btn primary" id="nAdd"></button><button class="btn" id="nUndo">↶ Undo</button></div>
+    <div class="row"><button class="btn" id="nMove" hidden>Move picked point to ✛</button><button class="btn danger" id="nDelPt" hidden>Delete picked point</button></div>
+    <div class="row">${old ? `<button class="btn danger" id="nDelete">Delete note</button>` : `<button class="btn" onclick="location.replace('${backTo}')">Cancel</button>`}<button class="btn primary" id="nSave">✓ Save</button></div>`;
+  const info = () => {
+    let len = 0; for (let i = 1; i < pts.length; i++) len += L_dist(pts[i - 1], pts[i]);
+    const ring = n.kind === "area" && pts.length >= 3;
+    if (ring) len += L_dist(pts[pts.length - 1], pts[0]);
+    $("#nInfo").textContent = !many() ? (pts.length ? "Placed. Move the map and tap the button to move it." : "Move the map so the ✛ is where the note goes.")
+      : !pts.length ? "Put the ✛ on the first point." : `${pts.length} point${pts.length === 1 ? "" : "s"}` + (pts.length > 1 ? ` · ${Math.round(len)} m` + (ring ? ` round · about ${ringArea(pts) >= 10000 ? (ringArea(pts) / 10000).toFixed(2) + " ha" : Math.round(ringArea(pts)) + " m²"}` : "") : "") + (sel != null ? ` · point ${sel + 1} picked` : "");
+    $("#nAdd").textContent = !many() ? (pts.length ? "Move it to the ✛" : "Place at the ✛") : sel != null ? `＋ Add after point ${sel + 1}` : "＋ Add point";
+    $("#nUndo").disabled = !hist.length;
+    $("#nMove").hidden = $("#nDelPt").hidden = !many() || sel == null;
+  };
+  const show = () => {
+    layer.clearLayers();
+    const col = n.colour, ring = n.kind === "area" && pts.length >= 3;
+    let shape = null;
+    if (many() && pts.length >= 2) shape = (ring ? L.polygon(pts, { color: col, weight: 3, fillColor: col, fillOpacity: 0.15, interactive: false }) : L.polyline(pts, { color: col, weight: 4, interactive: false })).addTo(layer);
+    if (many()) {
+      const sides = pts.length >= 2 ? pts.length - 1 + (ring ? 1 : 0) : 0;
+      for (let i = 0; i < sides; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        L.marker([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], { icon: icon("pl-mid", "+"), keyboard: false }).addTo(layer).on("click", () => {
+          keep(); pts.splice(i + 1, 0, [+((a[0] + b[0]) / 2).toFixed(7), +((a[1] + b[1]) / 2).toFixed(7)]); sel = i + 1; show(); });
+      }
+    }
+    pts.forEach((p, i) => {
+      const m = L.marker(p, { icon: icon("pl-pt" + (i === 0 ? " first" : "") + (i === sel ? " sel" : "")), draggable: true, keyboard: false, zIndexOffset: 500 }).addTo(layer);
+      if (many()) m.on("click", () => { sel = sel === i ? null : i; show(); });
+      m.on("dragstart", keep);
+      m.on("drag", e => { const ll = e.target.getLatLng(); pts[i] = [+ll.lat.toFixed(7), +ll.lng.toFixed(7)]; if (shape) shape.setLatLngs(pts); info(); });
+      m.on("dragend", () => { if (many()) sel = i; show(); });
+    });
+    info();
+  };
+  $("#nKind").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; n.kind = b.dataset.v; if (!many() && pts.length > 1) { keep(); pts = pts.slice(0, 1); } sel = null;
+    $("#nKind").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); show(); };
+  $("#nCol").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; n.colour = b.dataset.v; $("#nCol").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); show(); };
+  $("#nAdd").onclick = () => { keep(); if (!many()) pts = [here()]; else if (sel != null) { pts.splice(sel + 1, 0, here()); sel++; } else pts.push(here()); show(); };
+  $("#nUndo").onclick = () => { const h = hist.pop(); if (!h) return; pts = h; sel = null; show(); };
+  $("#nMove").onclick = () => { if (sel == null) return; keep(); pts[sel] = here(); show(); };
+  $("#nDelPt").onclick = () => { if (sel == null) return; keep(); pts.splice(sel, 1); sel = null; show(); };
+  const store = async list => { job.notes = list; job.updated = Date.now(); await DB.put("jobs", job); location.replace(backTo); };
+  $("#nSave").onclick = async () => {
+    n.label = $("#nLabel").value.trim(); n.note = $("#nNote").value.trim(); n.show = $("#nShow").checked;
+    if (!n.label) { toast("Give the note a label"); $("#nLabel").focus(); return; }
+    const need = n.kind === "line" ? 2 : n.kind === "area" ? 3 : 1;
+    if (pts.length < need) { toast(need === 1 ? "Place it on the map first" : `A${n.kind === "area" ? "n area" : " line"} needs at least ${need} points`); return; }
+    n.pts = pts; n.updated = Date.now();
+    await store((job.notes || []).filter(x => x.id !== n.id).concat(n));
+  };
+  if ($("#nDelete")) $("#nDelete").onclick = async () => { if (confirm(`Delete the note "${n.label || "Note"}"?`)) await store((job.notes || []).filter(x => x.id !== n.id)); };
+  show();
+}
+
 // ---------------------------------------------------------------- map page (browse / pick / measure)
 async function mapPage(jobId, mode, treeId) {
+  if (mode === "note") return noteEditor(jobId, treeId);
   const job = await DB.get("jobs", jobId);
   if (!job) return go("#/");
   const trees = await DB.by("trees", "job", jobId);
@@ -220,6 +331,7 @@ async function mapPage(jobId, mode, treeId) {
   const { map } = await buildMap($("#map"), job, mode === "browse" ? trees : others, {
     center, features: feats,
     onFeature: f => { if (mode === "browse") location.hash = `#/job/${jobId}/feat/${f.kind}/${f.id}`; },
+    onNote: mode === "browse" ? n => { location.hash = `#/job/${jobId}/map/note/${n.id}`; } : null,
     onTree: (t, ll) => {
       if (mode === "browse") { location.hash = `#/job/${jobId}/tree/${t.id}`; return; }
       map.panTo(ll); toast(`Centred on ${t.tag}`);  // snap the cross onto an existing tree
@@ -249,8 +361,9 @@ async function mapPage(jobId, mode, treeId) {
       <div class="row">
       <button class="btn small" onclick="go('#/job/${jobId}/plan')">🗺 ${multi ? "Plans" : "Site plan"}</button>
       <button class="btn small" onclick="go('#/job/${jobId}/layers')">▦ Layers</button>
+      <button class="btn small" onclick="go('#/job/${jobId}/map/note/new')">✎ Note</button>
       <button class="btn small primary" id="newHere">＋ Tree at the ✛</button></div>
-      <div class="hint">${trees.length - unplaced} of ${trees.length} trees shown${unplaced ? ` · ${unplaced} without a position` : ""}. Tap a tree to open it.</div>`;
+      <div class="hint">${trees.length - unplaced} of ${trees.length} trees shown${unplaced ? ` · ${unplaced} without a position` : ""}. Tap a tree to open it.${(job.notes || []).length ? ` ${job.notes.length} map note${job.notes.length === 1 ? "" : "s"} (🔒 = private).` : ""}</div>`;
     cross.hidden = false;
     $("#newHere").onclick = () => setTreePos([map.getCenter().lat, map.getCenter().lng], "map", "Placed on map");
     if (multi) {

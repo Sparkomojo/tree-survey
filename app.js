@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.60";
+const APP_VERSION = "1.61";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -1593,6 +1593,11 @@ async function mergeZip(zip, d, job, mine) {
   if ((d.job.safety || []).length) {  // site safety checks from the other device, once each
     const seen = new Set((job.safety || []).map(x => JSON.stringify(x)));
     job.safety = (job.safety || []).concat(d.job.safety.filter(x => !seen.has(JSON.stringify(x))));
+  }
+  if ((d.job.notes || []).length) {  // map notes from the other device: by id, the copy changed last wins
+    const mine = new Map((job.notes || []).map(x => [x.id, x]));
+    for (const x of d.job.notes) { const cur = mine.get(x.id); if (!cur || (x.updated || 0) > (cur.updated || 0)) mine.set(x.id, x); }
+    job.notes = [...mine.values()];
   }
   job.updated = Date.now(); await DB.put("jobs", job);
   const tags = {}; for (const t of await DB.by("trees", "job", job.id)) { const k = (t.tag || "").trim().toUpperCase(); if (k) tags[k] = (tags[k] || 0) + 1; }

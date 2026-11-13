@@ -280,3 +280,6 @@ html[data-text="larger"] main:not(:has(#map)), html[data-text="larger"] .bar { z
 .pl-pt.sel { border-color: #c8102e; box-shadow: 0 0 0 5px rgba(200, 16, 46, .3); }
 .pl-mid { width: 22px; height: 22px; margin: 6px; border-radius: 50%; background: rgba(255, 255, 255, .85); border: 2px dashed #ff7a1a; box-sizing: border-box;
   color: #b45309; font-weight: 700; font-size: 15px; line-height: 17px; text-align: center; }
+
+/* map notes */
+.leaflet-tooltip.notelabel { font-weight: 700; font-size: 12px; background: rgba(255,255,255,.9); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; }
