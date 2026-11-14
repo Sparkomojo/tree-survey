@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.67";
+const APP_VERSION = "1.68";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -801,6 +801,10 @@ async function treePage(jobId, treeId) {
       <div class="hint">${qtraTable ? "Worked out from your own QTRA table on this device, allowing for reduced mass and multiple targets. A Risk of Harm you type is used instead. A blank box is filled in by the PC toolkit from its own copy of the table." : "Work the Risk of Harm out with your QTRA calculator and type it here; the colour shows its band."} Size isn't used for property targets. QTRA asks for the hazard and the target to be recorded.</div>` :
       riskMethods(job).includes("QTRA") ? `<div class="hint">QTRA is only shown for a registered QTRA assessor – add the surveyor and registration number in Settings.</div>` : ""}
     </details>
+    <details class="more" id="colBox" ${t.planColour ? "open" : ""}><summary>Colour on the map and plans ${t.planColour ? "(chosen)" : "(automatic)"}</summary>
+      <div class="hint">Automatic: the colour of the tree's risk rating; with no rating, red = fell, orange = works, green = no works${bs ? " (BS 5837: its category colour)" : ""}. Choose a colour here to mark this tree differently on the map, the plans and the GIS files.</div>
+      <div class="chips" id="planCol"><button class="chip ${t.planColour ? "" : "on"}" data-v="">Automatic</button>${PLAN_COLOURS.map(([n, c]) => `<button class="chip ${t.planColour === c ? "on" : ""}" data-v="${c}" style="border-left:10px solid ${c}">${n}</button>`).join("")}</div>
+    </details>
     ${useCavat ? `<details class="more" id="cavatBox" ${t.cavat ? "open" : ""}><summary>CAVAT value</summary>
       <div class="hint">${job.cavatLA ? `${esc(job.cavatLA)} – CTI ${CAVAT.cti(job.cavatLA) || "?"}%` : "Set the local authority on the site details first."} · UVF £${s.uvf || CAVAT.DEFAULT_UVF} · stem diameter from the box above</div>
       <label>Visibility</label>${cvPick("vis", CAVAT.VIS)}
@@ -994,6 +998,13 @@ async function treePage(jobId, treeId) {
   });
   $("#addDefect").onclick = e => { e.preventDefault(); defectSheet("", s.phrases.obs, addObs, { dbh: stemDia() }); };
   // one tap: "Dead." goes at the front of the observations (no details panel)
+  $("#planCol").onclick = e => {   // a colour for this tree on the map and plans; Automatic clears it
+    const b = e.target.closest(".chip"); if (!b) return;
+    if (b.dataset.v) t.planColour = b.dataset.v; else delete t.planColour;
+    $("#planCol").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b));
+    $("#colBox").querySelector("summary").textContent = "Colour on the map and plans " + (t.planColour ? "(chosen)" : "(automatic)");
+    touch();
+  };
   $("#addDead").onclick = e => {
     e.preventDefault();
     const el = $("#f_comments"), v = el.value.trim();
@@ -1541,12 +1552,14 @@ async function buildZip(jobId) {
   const withRoute = !!job.route || trees.some(t => t.direction || t.markerPost);
   const withOwn = trees.some(t => t.ownership || t.landowner);
   const withOld = trees.some(t => t.oldTag);
+  const withCol = trees.some(t => t.planColour);   // a colour chosen for the tree on plans ("Red", "Blue"…)
+  const colName = t => { const c = PLAN_COLOURS.find(x => x[1] === t.planColour); return c ? c[0] : (t.planColour || ""); };
   const linePts = t => t.end && t.end.lat != null && ((t.via || []).length || t.closed)
     ? [[t.lat, t.lon]].concat((t.via || []).map(p => [p.lat, p.lon]), [[t.end.lat, t.end.lon]]).map(p => `${(+p[0]).toFixed(6)} ${(+p[1]).toFixed(6)}`).join("; ") : "";
   const withPts = trees.some(t => linePts(t));  // a tag already on the tree from an earlier survey – kept apart from our own number
   const withLife = !bs && trees.some(t => t.lifeStage);  // the BS 5837 sheet has its own Life Stage column
-  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withLife ? ["Life Stage"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
-  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withLife ? [t.lifeStage || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []);
+  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withCol ? ["Plan Colour"] : []).concat(withLife ? ["Life Stage"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
+  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withCol ? [colName(t)] : []).concat(withLife ? [t.lifeStage || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []);
   const head0 = bs ? BS_HEAD : AMR_HEAD.map(h => h === "Crown Spread (m)" ? crownHead(job) : h).concat(withRisk ? RISK_HEAD : [], withCavat ? ["CAVAT (£)"] : [], withChange ? ["Change Since Last Survey"] : [], withZone ? ["Zone"] : [], withVet ? ["Veteran Features"] : [], withLine ? ["End Grid Ref", "End Latitude", "End Longitude"] : []);
   const head = head0.concat(extraHead);
   const ws = XLSX.utils.aoa_to_sheet([head, ...trees.map(t => treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, withLine).concat(extra(t)))]);

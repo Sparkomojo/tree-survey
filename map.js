@@ -92,10 +92,38 @@ function closeMap() {
   if (liveMap) { liveMap.remove(); liveMap = null; }
 }
 
+// Colours a tree can be given by hand (the same list as the PC's tree_colour.py), and the colours of the risk
+// table: VALID's Roadside / PROW levels, the QTRA band of the Risk of Harm, the THREATS category.
+const PLAN_COLOURS = [["Red", "#C00000"], ["Orange", "#E07000"], ["Amber", "#FFC000"], ["Yellow", "#F2D600"], ["Green", "#2F6B3A"],
+  ["Light green", "#92D050"], ["Blue", "#1F6FB2"], ["Purple", "#7B3FA0"], ["Pink", "#D6408F"], ["Grey", "#6B6B6B"], ["Black", "#111111"]];
+const RISK_COL = { red: "#FF7C80", orange: "#F4B183", amber: "#FFC000", yellow: "#FFE699", green: "#92D050" };
+function riskColour(t) {
+  const v = String(t.valid || "").trim().toLowerCase();
+  if (v) {
+    if (v.endsWith("?")) return RISK_COL.amber;
+    if (v.startsWith("unaccept") || v === "not acceptable" || v === "intolerable") return RISK_COL.red;
+    if (v.startsWith("not tol")) return RISK_COL.orange;
+    if (v.startsWith("tol")) return RISK_COL.yellow;
+    if (v.startsWith("accept") || v.startsWith("broadly")) return RISK_COL.green;
+  }
+  try {
+    const r = typeof QTRA !== "undefined" && t.qtraRoh ? QTRA.parse(t.qtraRoh) : null;
+    if (r) return { "roh-red": RISK_COL.red, "roh-amber": RISK_COL.amber, "roh-yellow": RISK_COL.amber, "roh-green": RISK_COL.green }[QTRA.band(r)[1]] || null;
+    const sc = typeof THREATS !== "undefined" && t.threats ? THREATS.score(t.threats) : null;
+    if (sc != null) { const n = (THREATS.category(sc) || {}).n;
+      return n >= 6 ? RISK_COL.red : n === 5 ? RISK_COL.orange : n === 4 ? RISK_COL.amber : n === 3 ? RISK_COL.yellow : n ? RISK_COL.green : null; }
+  } catch (e) { /* a rating that can't be read: fall back to the works colour */ }
+  return null;
+}
+// true when the tree's colour comes from a choice or a risk rating (its dot is then filled with it)
+const ownColour = (job, t) => job.type !== "WORKS" && !!(t.planColour || (job.type !== "BS5837" && riskColour(t)));
 function treeColour(job, t) {
+  if (t.planColour && job.type !== "WORKS") return t.planColour;   // chosen by hand: wins over everything
   if (job.trial && t.droneFlag) return { Red: "#C8102E", Amber: "#E8A200", Green: "#2F8A3B" }[t.droneFlag] || "#2F6B3A";  // drone triage
   if (job.type === "WORKS") return { done: "#2F8A3B", part: "#E8A200", notdone: "#C8102E" }[t.wstatus] || "#E07000";
   if (job.type === "BS5837") return CAT_COL[(t.category || "")[0]] || "#2F6B3A";
+  const rc = riskColour(t);
+  if (rc) return rc;   // the colour of its rating in the risk table
   const r = (t.recs || "").toLowerCase();
   if (/\bfell|\bremove/.test(r)) return "#C00000";
   if (!r.trim() || /no work/.test(r)) return "#2F6B3A";
@@ -156,7 +184,8 @@ async function buildMap(el, job, trees, opts = {}) {
     } else
     if (r) L.circle(ll, { radius: r, color: col, weight: 1.5, fillOpacity: 0.15, interactive: false }).addTo(treeLayer);
     const wo = job.type === "WORKS";  // works orders: the dot shows the item's status
-    const m = L.circleMarker(ll, { radius: wo ? 8 : 5, color: "#fff", weight: wo ? 2 : 1.5, fillColor: wo ? col : "#111", fillOpacity: 1 }).addTo(treeLayer);
+    const oc = ownColour(job, t);
+    const m = L.circleMarker(ll, { radius: wo ? 8 : oc ? 7 : 5, color: oc ? "#111" : "#fff", weight: wo ? 2 : 1.5, fillColor: wo || ownColour(job, t) ? col : "#111", fillOpacity: 1 }).addTo(treeLayer);
     // a finger-sized invisible target under the small dot, so a tap near it counts
     L.circleMarker(ll, { radius: 20, stroke: false, fillColor: "#000", fillOpacity: 0, interactive: !!opts.onTree, bubblingMouseEvents: false }).addTo(treeLayer).on("click", tap);
     m.bringToFront();
