@@ -299,7 +299,8 @@ function fungusSheet(species, onPick) {
 function fungusPhrase(f) {
   const sci = f.sci.replace(/\s*\(.*\)$/, "");
   const com = f.com.split("/")[0].trim();
-  const lc = sci.startsWith(com.split(" ")[0]) ? com : com.charAt(0).toLowerCase() + com.slice(1);  // a genus keeps its capital
+  // a genus keeps its capital, and so does a name written with capitals inside it ("Brittle Cinder fungus")
+  const lc = sci.startsWith(com.split(" ")[0]) || /[A-Z]/.test(com.slice(1)) ? com : com.charAt(0).toLowerCase() + com.slice(1);
   return f.g === "Disease" ? `Symptoms of ${lc} (${sci})` : `Fruiting bodies of ${sci} (${lc})`;
 }
 function fungusInfo(f) {
