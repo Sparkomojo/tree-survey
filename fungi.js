@@ -687,8 +687,8 @@ const FUNGI = [
 },
 {
 "g": "Disease",
-"com": "Phytophthora (oomycetes – not true fungi)",
-"sci": "Phytophthora ramorum, P. austrocedri, P. lateralis, P. cactorum and others",
+"com": "Phytophthora",
+"sci": "Phytophthora spp. (oomycetes – not true fungi)",
 "hosts": "Larch, rhododendron, juniper, Lawson cypress, beech and many others",
 "where": "Roots, collar, bark (bleeding cankers)",
 "decay": "—",

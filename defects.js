@@ -299,7 +299,7 @@ function fungusSheet(species, onPick) {
 function fungusPhrase(f) {
   const sci = f.sci.replace(/\s*\(.*\)$/, "");
   const com = f.com.split("/")[0].trim();
-  const lc = com.charAt(0).toLowerCase() + com.slice(1);
+  const lc = sci.startsWith(com.split(" ")[0]) ? com : com.charAt(0).toLowerCase() + com.slice(1);  // a genus keeps its capital
   return f.g === "Disease" ? `Symptoms of ${lc} (${sci})` : `Fruiting bodies of ${sci} (${lc})`;
 }
 function fungusInfo(f) {
