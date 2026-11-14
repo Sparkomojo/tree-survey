@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.63";
+const APP_VERSION = "1.64";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -539,7 +539,7 @@ async function tablePage(jobId) {
     if (kind === "pick") { const cur = k === "adb" ? adbFix(v) : v; return `<select data-k="${k}"><option value=""></option>${opt.map(o => `<option ${o === cur ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`; }
     if (kind === "tick") return `<input type="checkbox" data-k="${k}" ${v ? "checked" : ""} aria-label="Needs immediate attention">`;
     if (kind === "long") return `<textarea data-k="${k}" rows="2" style="width:${opt}px">${esc(v)}</textarea>`;
-    if (kind === "species") return `<input data-k="${k}" list="splist" value="${esc(v)}" style="width:${opt}px" autocomplete="off">`;
+    if (kind === "species") return `<input data-k="${k}" class="spcell" value="${esc(v)}" style="width:${opt}px" autocomplete="off" autocapitalize="off" spellcheck="false">`;
     return `<input data-k="${k}" value="${esc(v)}" inputmode="${job.bands && !bs ? "text" : "decimal"}" style="width:${opt}px" autocomplete="off">`;
   };
   app.innerHTML = `
@@ -548,7 +548,7 @@ async function tablePage(jobId) {
   <main class="wide">
     <input id="tblFind" placeholder="Find a tree (tag, species or words)" autocomplete="off">
     <div class="hint">Change a cell and move on – it saves by itself. Tap a tag to open the tree's full page. Scroll sideways for more columns.</div>
-    <datalist id="splist">${SPECIES.map(x => `<option value="${esc(x)}">`).join("")}</datalist>
+    <div id="spSuggest" class="spsuggest" hidden></div>
     <div class="tblwrap"><table class="tbl" id="tbl">
       <thead><tr><th class="stick">Tag</th>${cols.map(c => `<th>${esc(c[1])}</th>`).join("")}</tr></thead>
       <tbody>${trees.map(t => `<tr data-id="${esc(t.id)}"><th class="stick"><a href="#/job/${jobId}/tree/${esc(t.id)}">${esc(t.tag || "–")}</a></th>${cols.map(c => `<td>${cell(t, c)}</td>`).join("")}</tr>`).join("")}</tbody>
@@ -560,6 +560,7 @@ async function tablePage(jobId) {
     const el = e.target, k = el.dataset.k, tr = el.closest("tr"); if (!k || !tr) return;
     const t = byId.get(tr.dataset.id); if (!t) return;
     const v = el.type === "checkbox" ? el.checked : el.value.trim();
+    if (k === "species" && !v) { el.value = t.species || ""; return; }  // an emptied species box is put back, never saved blank
     if ((t[k] == null ? "" : t[k]) === v || (el.type === "checkbox" && !!t[k] === v)) return;
     t[k] = v;
     if (COPY_DIMS.includes(k) && t.estCopied && t.copiedFields) {  // a copied dimension changed here counts as checked
@@ -571,6 +572,38 @@ async function tablePage(jobId) {
     el.classList.add("saved"); setTimeout(() => el.classList.remove("saved"), 900);
     $("#tblSaved").textContent = `Saved ${t.tag || "tree"} – ${cols.find(c => c[0] === k)[1].toLowerCase()}.`;
   });
+  // species: our own pick-list under the box (the browser's built-in one only opens once the box has been emptied)
+  const sug = $("#spSuggest");
+  const used = [...new Set(trees.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0)).map(t => t.species).filter(Boolean))].slice(0, 8);
+  let spEl = null;
+  const spClose = () => { sug.hidden = true; spEl = null; };
+  const spShow = el => {
+    spEl = el;
+    const t = byId.get(el.closest("tr").dataset.id), q = el.value.trim().toLowerCase(), typed = q && q !== (t.species || "").toLowerCase();
+    let list;
+    if (!typed) list = used.concat(SPECIES.filter(x => !used.includes(x)).slice(0, 40));          // this survey's species first
+    else { const starts = SPECIES.filter(x => x.toLowerCase().startsWith(q) || x.toLowerCase().split(" - ").some(p => p.startsWith(q)));
+      list = starts.concat(SPECIES.filter(x => !starts.includes(x) && x.toLowerCase().includes(q))).slice(0, 40); }
+    if (!list.length) { sug.hidden = true; return; }
+    sug.innerHTML = (typed ? "" : `<div class="sphead">On this survey</div>`) + list.map((x, i) => (!typed && i === used.length ? `<div class="sphead">All species – type to search</div>` : "") + `<button type="button" data-v="${esc(x)}">${esc(x)}</button>`).join("");
+    const r = el.getBoundingClientRect(), below = window.innerHeight - r.bottom;
+    sug.style.left = Math.max(4, Math.min(r.left, window.innerWidth - 330)) + "px";
+    sug.style.width = Math.min(322, window.innerWidth - 8) + "px";
+    if (below > 220 || below > r.top) { sug.style.top = r.bottom + 2 + "px"; sug.style.bottom = "auto"; sug.style.maxHeight = Math.max(140, below - 10) + "px"; }
+    else { sug.style.top = "auto"; sug.style.bottom = window.innerHeight - r.top + 2 + "px"; sug.style.maxHeight = Math.max(140, r.top - 10) + "px"; }
+    sug.hidden = false; sug.scrollTop = 0;
+  };
+  $("#tbl").addEventListener("focusin", e => { if (e.target.classList.contains("spcell")) { e.target.select(); spShow(e.target); } });
+  $("#tbl").addEventListener("input", e => { if (e.target.classList.contains("spcell")) spShow(e.target); });
+  $("#tbl").addEventListener("focusout", e => { if (e.target.classList.contains("spcell")) setTimeout(() => { if (spEl === e.target && document.activeElement !== e.target) spClose(); }, 250); });
+  sug.addEventListener("pointerdown", e => e.preventDefault());   // keep the box focused while a name is tapped
+  sug.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b || !spEl) return;
+    const el = spEl; el.value = b.dataset.v; spClose();
+    el.dispatchEvent(new Event("change", { bubbles: true })); el.blur();
+  });
+  document.querySelector(".tblwrap").addEventListener("scroll", spClose, { passive: true });
+  leaveHook = async () => { spClose(); };
   $("#tblFind").oninput = e => {
     const q = e.target.value.trim().toLowerCase();
     $("#tbl").querySelectorAll("tbody tr").forEach(tr => { const t = byId.get(tr.dataset.id);

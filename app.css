@@ -297,3 +297,9 @@ main.wide { max-width: none; }
 .tbl textarea { white-space: normal; resize: vertical; }
 .tbl input[type=checkbox] { width: 22px; height: 22px; margin: 6px 14px; }
 .tbl .saved { outline: 2px solid #2f6b3a; background: #e6f2e8; }
+
+/* species pick-list in the table */
+.spsuggest { position: fixed; z-index: 50; overflow-y: auto; background: #fff; border: 1px solid #3c5c46; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.spsuggest button { display: block; width: 100%; text-align: left; padding: 11px 12px; border: 0; border-bottom: 1px solid #eef1ec; background: #fff; font-size: 0.95rem; color: #0a120d; }
+.spsuggest button:active { background: #e6f2e8; }
+.spsuggest .sphead { padding: 6px 12px; font-size: 0.78rem; font-weight: 700; color: #44524a; background: #f3f5f1; text-transform: uppercase; letter-spacing: .04em; }
