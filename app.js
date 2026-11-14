@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.61";
+const APP_VERSION = "1.62";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -638,6 +638,8 @@ async function treePage(jobId, treeId) {
     <div class="hint" id="sizeInfo"></div>
     <label class="check"><input type="checkbox" id="fullHeight" ${t.fullHeight ? "checked" : ""}> Tree has reached its full height (growth from now adds strength)</label>
     <label class="check"><input type="checkbox" id="estimated" ${t.estimated ? "checked" : ""}> Dimensions estimated (off-site / no access) – marked # on export</label>
+    ${bs ? "" : `<label>Life stage <span style="font-weight:400;color:var(--muted)">– optional</span></label>${pick("lifeStage", LIFE)}
+      <div class="hint">Y young · SM semi-mature · EM early mature · M mature · OM over-mature · V veteran. Tap again to clear.</div>`}
     ${bs ? `<div class="hint">Rounded to BS 5837 4.4.2.6 when you leave a box: 0.5 m up to 10 m, 1 m above (spreads rounded up); stem diameter to 10 mm.</div>` : ""}
     ${bs ? `
       <div class="grid4">${num("spreadN", "Spread N")}${num("spreadE", "E")}${num("spreadS", "S")}${num("spreadW", "W")}</div>
@@ -1445,8 +1447,9 @@ async function buildZip(jobId) {
   const linePts = t => t.end && t.end.lat != null && ((t.via || []).length || t.closed)
     ? [[t.lat, t.lon]].concat((t.via || []).map(p => [p.lat, p.lon]), [[t.end.lat, t.end.lon]]).map(p => `${(+p[0]).toFixed(6)} ${(+p[1]).toFixed(6)}`).join("; ") : "";
   const withPts = trees.some(t => linePts(t));  // a tag already on the tree from an earlier survey – kept apart from our own number
-  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
-  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []);
+  const withLife = !bs && trees.some(t => t.lifeStage);  // the BS 5837 sheet has its own Life Stage column
+  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withLife ? ["Life Stage"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
+  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withLife ? [t.lifeStage || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []);
   const head0 = bs ? BS_HEAD : AMR_HEAD.map(h => h === "Crown Spread (m)" ? crownHead(job) : h).concat(withRisk ? RISK_HEAD : [], withCavat ? ["CAVAT (£)"] : [], withChange ? ["Change Since Last Survey"] : [], withZone ? ["Zone"] : [], withVet ? ["Veteran Features"] : [], withLine ? ["End Grid Ref", "End Latitude", "End Longitude"] : []);
   const head = head0.concat(extraHead);
   const ws = XLSX.utils.aoa_to_sheet([head, ...trees.map(t => treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, withLine).concat(extra(t)))]);
