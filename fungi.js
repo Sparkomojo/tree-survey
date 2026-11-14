@@ -111,7 +111,7 @@ const FUNGI = [
 },
 {
 "g": "Roots & butt",
-"com": "Brittle Cinder fungus",
+"com": "Brittle cinder fungus",
 "sci": "Kretzschmaria deusta",
 "hosts": "Beech, lime, horse chestnut, maple/sycamore, oak, plane",
 "where": "Butt and roots",
