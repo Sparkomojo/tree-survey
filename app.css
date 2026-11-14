@@ -283,3 +283,17 @@ html[data-text="larger"] main:not(:has(#map)), html[data-text="larger"] .bar { z
 
 /* map notes */
 .leaflet-tooltip.notelabel { font-weight: 700; font-size: 12px; background: rgba(255,255,255,.9); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; }
+
+/* the survey as an editable table */
+main.wide { max-width: none; }
+.tblwrap { overflow: auto; max-height: calc(100vh - 210px); border: 1px solid var(--line, #d9ded6); border-radius: 10px; margin-top: 8px; background: #fff; }
+.tbl { border-collapse: separate; border-spacing: 0; font-size: 0.9rem; }
+.tbl th, .tbl td { border-bottom: 1px solid #e3e7e0; border-right: 1px solid #eef1ec; padding: 3px 4px; vertical-align: top; white-space: nowrap; }
+.tbl thead th { position: sticky; top: 0; z-index: 3; background: #3c5c46; color: #fff; font-weight: 600; padding: 7px 6px; text-align: left; }
+.tbl .stick { position: sticky; left: 0; z-index: 2; background: #f3f5f1; min-width: 62px; text-align: left; padding: 8px 8px; }
+.tbl thead .stick { z-index: 4; background: #3c5c46; }
+.tbl .stick a { font-weight: 700; color: #2f6b3a; text-decoration: none; }
+.tbl input:not([type=checkbox]), .tbl select, .tbl textarea { margin: 0; padding: 6px 6px; font-size: 0.9rem; border-radius: 6px; min-height: 0; }
+.tbl textarea { white-space: normal; resize: vertical; }
+.tbl input[type=checkbox] { width: 22px; height: 22px; margin: 6px 14px; }
+.tbl .saved { outline: 2px solid #2f6b3a; background: #e6f2e8; }

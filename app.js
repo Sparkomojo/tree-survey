@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.62";
+const APP_VERSION = "1.63";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -196,6 +196,7 @@ async function route() {
     if (h[0] === "job" && h[2] === "eco") return await ecoListPage(h[1]);
     if (h[0] === "job" && h[2] === "nestcheck") return await nestCheckPage(h[1]);
     if (h[0] === "job" && h[2] === "trees") return await jobPage(h[1], true);
+    if (h[0] === "job" && h[2] === "table") return await tablePage(h[1]);
     if (h[0] === "job" && h[2] === "details") return await detailsPage(h[1]);
     if (h[0] === "job" && h[2] === "photos") return await sitePhotosPage(h[1]);
     if (h[0] === "job" && h[2] === "map") return await mapPage(h[1], h[3] || "browse", h[4]);
@@ -447,6 +448,7 @@ async function jobPage(id, treesOnly) {
     <div class="row">
       <button class="btn small" onclick="go('#/job/${id}/photos')">📷 Photos (${sitePc})</button>
       <button class="btn small" onclick="go('#/job/${id}/map')">🗺 Map</button>
+      ${trees.length ? `<button class="btn small" onclick="go('#/job/${id}/table')">▦ Table</button>` : ""}
       <button class="btn small green" onclick="exportJob('${id}')">⇪ Export</button>
       ${trees.length ? `<button class="btn small" onclick="resurvey('${id}')">↻ Re-survey</button>` : ""}
       ${bo.nest && job.type !== "NEST" ? `<button class="btn small" onclick="go('#/job/${id}/feat/nest/new')">🐦 ＋ Nest (${feats.filter(f => f.kind === "nest").length})</button>` : ""}
@@ -512,6 +514,68 @@ function startGps(onFix, onState) {
   }, err => { stopGps(); onState(err.code === 1 ? "denied" : "error", err.message); },
   { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
   gpsTimer = setTimeout(() => { stopGps(); onState(best ? "done" : "error", "No fix after 45 s"); }, 45000);
+}
+
+// ------------------------------------------------------------------ table of the survey's trees, editable in place
+// Every tree on one scrolling sheet, in the order recorded. A cell saves as soon as you leave it; the tag opens the
+// tree's full page (position, photos, defects panel, risk). The same data as the tree pages – nothing is kept twice.
+async function tablePage(jobId) {
+  const job = await DB.get("jobs", jobId);
+  if (!job) return go("#/");
+  const bs = job.type === "BS5837";
+  const trees = (await DB.by("trees", "job", jobId)).sort((a, b) => (a.created || a.updated || 0) - (b.created || b.updated || 0) || byTag(a, b));
+  const single = !bs && job.crownMode !== "cardinal" && job.crownMode !== "radius";
+  // [key, heading, kind, options | width]
+  const cols = [["species", "Species", "species", 210], ["lifeStage", "Life stage", "pick", LIFE], ["height", "Height (m)", "num", 74], ["dbh", "DBH (mm)", "num", 84]]
+    .concat(single ? [["spread", "Spread (m)", "num", 78]] : !bs && job.crownMode === "radius" ? [["radius", "Radius (m)", "num", 78]]
+      : [["spreadN", "N", "num", 54], ["spreadE", "E", "num", 54], ["spreadS", "S", "num", 54], ["spreadW", "W", "num", 54]])
+    .concat(bs ? [["physio", "Physio.", "pick", COND], ["struct", "Struct.", "pick", STRUCT]] : [])
+    .concat([["comments", "Observations", "long", 280], ["recs", "Recommendations", "long", 240]])
+    .concat(bs ? [["erc", "ERC", "pick", ERC], ["category", "Cat.", "pick", CATS], ["retain", "Retain", "pick", ["Retain", "Remove"]]]
+      : [["adb", "Ash dieback", "pick", ADB.slice(1)]])
+    .concat([["ownership", "Ownership", "pick", OWNERSHIP], ["urgent", "Urgent", "tick", 60]]);
+  const cell = (t, [k, , kind, opt]) => {
+    const v = t[k] == null ? "" : t[k];
+    if (kind === "pick") { const cur = k === "adb" ? adbFix(v) : v; return `<select data-k="${k}"><option value=""></option>${opt.map(o => `<option ${o === cur ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`; }
+    if (kind === "tick") return `<input type="checkbox" data-k="${k}" ${v ? "checked" : ""} aria-label="Needs immediate attention">`;
+    if (kind === "long") return `<textarea data-k="${k}" rows="2" style="width:${opt}px">${esc(v)}</textarea>`;
+    if (kind === "species") return `<input data-k="${k}" list="splist" value="${esc(v)}" style="width:${opt}px" autocomplete="off">`;
+    return `<input data-k="${k}" value="${esc(v)}" inputmode="${job.bands && !bs ? "text" : "decimal"}" style="width:${opt}px" autocomplete="off">`;
+  };
+  app.innerHTML = `
+  <header class="top"><button aria-label="Back" onclick="go('#/job/${jobId}')">‹</button>
+    <h1>Table<span class="sub">${esc(job.site)} · ${trees.length} tree${trees.length === 1 ? "" : "s"}</span></h1><span></span></header>
+  <main class="wide">
+    <input id="tblFind" placeholder="Find a tree (tag, species or words)" autocomplete="off">
+    <div class="hint">Change a cell and move on – it saves by itself. Tap a tag to open the tree's full page. Scroll sideways for more columns.</div>
+    <datalist id="splist">${SPECIES.map(x => `<option value="${esc(x)}">`).join("")}</datalist>
+    <div class="tblwrap"><table class="tbl" id="tbl">
+      <thead><tr><th class="stick">Tag</th>${cols.map(c => `<th>${esc(c[1])}</th>`).join("")}</tr></thead>
+      <tbody>${trees.map(t => `<tr data-id="${esc(t.id)}"><th class="stick"><a href="#/job/${jobId}/tree/${esc(t.id)}">${esc(t.tag || "–")}</a></th>${cols.map(c => `<td>${cell(t, c)}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table></div>
+    <div class="hint" id="tblSaved"></div>
+  </main>`;
+  const byId = new Map(trees.map(t => [t.id, t]));
+  $("#tbl").addEventListener("change", async e => {
+    const el = e.target, k = el.dataset.k, tr = el.closest("tr"); if (!k || !tr) return;
+    const t = byId.get(tr.dataset.id); if (!t) return;
+    const v = el.type === "checkbox" ? el.checked : el.value.trim();
+    if ((t[k] == null ? "" : t[k]) === v || (el.type === "checkbox" && !!t[k] === v)) return;
+    t[k] = v;
+    if (COPY_DIMS.includes(k) && t.estCopied && t.copiedFields) {  // a copied dimension changed here counts as checked
+      t.copiedFields = t.copiedFields.filter(x => x !== k);
+      if (!t.copiedFields.some(x => COPY_DIMS.includes(x))) { delete t.estCopied; t.estimated = false; }
+    }
+    t.updated = Date.now();
+    await DB.put("trees", t); await touchJob(job);
+    el.classList.add("saved"); setTimeout(() => el.classList.remove("saved"), 900);
+    $("#tblSaved").textContent = `Saved ${t.tag || "tree"} – ${cols.find(c => c[0] === k)[1].toLowerCase()}.`;
+  });
+  $("#tblFind").oninput = e => {
+    const q = e.target.value.trim().toLowerCase();
+    $("#tbl").querySelectorAll("tbody tr").forEach(tr => { const t = byId.get(tr.dataset.id);
+      tr.hidden = !!q && !`${t.tag} ${t.species} ${t.comments || ""} ${t.recs || ""}`.toLowerCase().includes(q); });
+  };
 }
 
 // ------------------------------------------------------------------ tree form
