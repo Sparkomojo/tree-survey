@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.68";
+const APP_VERSION = "1.69";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -180,6 +180,11 @@ async function route() {
   if (leaveHook) { try { await leaveHook(); } catch (e) { console.error(e); } leaveHook = null; }
   if (typeof LASER !== "undefined") { LASER.on = null; LASER.status = null; }
   const h = location.hash.replace(/^#\/?/, "").split("/");
+  if (h[0] !== "ideas") {   // for the Ideas page: where the tester was just before it
+    const where = h[0] === "job" ? ({ tree: "Tree page", map: "Map", table: "Table", details: "Site details", photos: "Site photos", layers: "Map layers", plan: "Site plan", safety: "Site safety check" }[h[2]] || "Survey page")
+      : ({ settings: "Settings", checks: "Checks", lone: "Lone working", notes: "Route notes", new: "New survey", quote: "Quote visit" }[h[0]] || "");
+    try { sessionStorage.setItem("tree-survey-last", where); } catch (e) { }
+  }
   window.scrollTo(0, 0);
   try {
     if (h[0] === "job" && h[2] === "tree") return await treePage(h[1], h[3]);
@@ -213,6 +218,7 @@ async function route() {
     if (h[0] === "install") return installPage();
     if (h[0] === "lone") return await lonePage();
     if (h[0] === "checks") return await checksPage();
+    if (h[0] === "ideas" && FEEDBACK) return await ideasPage();
     if (h[0] === "incident" && h[1] === "new") return await incidentForm();
     if (h[0] === "check" && h[1] === "new") return await checkForm(h[2]);
     if (h[0] === "check") return await checkView(h[1]);
@@ -252,15 +258,95 @@ function installPage() {
   </main>`;
 }
 
+// ------------------------------------------------------------------ ideas and problems (field testing)
+// A list each tester keeps on their own device and sends to the developer as a spreadsheet file. For the testing
+// period only: set FEEDBACK to false to take the button and the page out. Nothing here is part of a survey export.
+const FEEDBACK = true;
+const IDEA_KINDS = ["Idea", "Problem", "Wording", "Question"];
+const IDEA_HEAD = ["Date", "Time", "Type", "Where in the app", "Note", "From", "App version", "Device", "Sent"];
+const ideaDevice = () => { const u = navigator.userAgent; return (/iPad|iPhone/.test(u) ? "Apple " : /Android/.test(u) ? "Android " : /Windows/.test(u) ? "Windows " : "") + (/Edg\//.test(u) ? "Edge" : /Chrome\//.test(u) ? "Chrome" : /Safari\//.test(u) ? "Safari" : /Firefox\//.test(u) ? "Firefox" : "browser") + ` ${screen.width}×${screen.height}`; };
+const ideaRows = (items, who) => items.map(i => { const d = new Date(i.at);
+  return [d.toLocaleDateString("en-GB"), d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }), i.kind || "Idea", i.where || "", i.text || "", i.by || who || "", i.app || "", i.device || "", i.sent ? "Yes" : ""]; });
+const csvCell = v => { const t = String(v ?? ""); return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+const ideasCsv = (items, who) => "\ufeff" + [IDEA_HEAD].concat(ideaRows(items, who)).map(r => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+async function ideasPage() {
+  const s = await settings();
+  const rec = (await DB.get("settings", "ideas")) || { id: "ideas", items: [] };
+  let from = ""; try { from = sessionStorage.getItem("tree-survey-last") || ""; } catch (e) { }   // the page they were on before this one
+  let kind = "Idea";
+  const draw = () => {
+    const todo = rec.items.filter(i => !i.sent).length;
+    app.innerHTML = `
+    <header class="top"><button aria-label="Back" onclick="go('#/')">‹</button><h1>Ideas and problems<span class="sub">for the developer</span></h1></header>
+    <main>
+      <p class="hint">Note anything while it is fresh: something that would help, something that went wrong, wording that isn't right. Notes stay on this device until you send them.</p>
+      <div class="chips" id="ideaKind">${IDEA_KINDS.map(k => `<button class="chip ${k === kind ? "on" : ""}" data-v="${k}">${k}</button>`).join("")}</div>
+      <label for="ideaWhere">Where in the app (optional)</label><input id="ideaWhere" value="${esc(from)}" placeholder="e.g. tree page, map, export">
+      <label for="ideaText">What would you like, or what happened?</label><textarea id="ideaText" rows="4" placeholder="Say what you were doing, what you expected and what you got"></textarea>
+      <button class="btn primary block" id="ideaAdd" style="margin-top:8px">Add to the list</button>
+      <h2>${rec.items.length ? `${rec.items.length} note${rec.items.length === 1 ? "" : "s"}${todo ? ` – ${todo} not sent yet` : " – all sent"}` : "No notes yet"}</h2>
+      ${rec.items.slice().reverse().map(i => `<div class="card" data-id="${esc(i.id)}"><div class="meta"><span class="badge">${esc(i.kind || "Idea")}</span> ${new Date(i.at).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}${i.where ? " · " + esc(i.where) : ""}${i.sent ? " · sent" : ""}</div>
+        <div style="white-space:pre-wrap;margin:4px 0">${esc(i.text)}</div><button class="btn small ideaDel">Delete</button></div>`).join("")}
+      ${rec.items.length ? `<button class="btn primary block" id="ideaSend" style="margin-top:10px">Send the list (${todo ? todo + " new" : "all"}) – spreadsheet file</button>
+      <button class="btn small" id="ideaClear" style="margin-top:8px">Remove the notes already sent</button>` : ""}
+      <p class="hint">Sending makes one file (<i>Tree Survey ideas … .csv</i>, opens in Excel) to email or share. It holds only these notes, your name from Settings, the app version and the kind of device – no survey data, positions or photos.</p>
+    </main>`;
+    $("#ideaKind").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; kind = b.dataset.v; $("#ideaKind").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); };
+    $("#ideaAdd").onclick = async () => {
+      const text = $("#ideaText").value.trim();
+      if (!text) { toast("Type a note first"); return; }
+      rec.items.push({ id: uid(), at: Date.now(), kind, where: $("#ideaWhere").value.trim(), text, by: s.consultant || "", app: APP_VERSION, device: ideaDevice() });
+      await DB.put("settings", rec); toast("Added"); draw();
+    };
+    document.querySelectorAll(".ideaDel").forEach(b => b.onclick = async () => {
+      const id = b.closest(".card").dataset.id;
+      if (!confirm("Delete this note?")) return;
+      rec.items = rec.items.filter(i => i.id !== id); await DB.put("settings", rec); draw();
+    });
+    if ($("#ideaSend")) $("#ideaSend").onclick = async () => {
+      const send = todo ? rec.items.filter(i => !i.sent) : rec.items;
+      const who = (s.consultant || "tester").replace(/[^A-Za-z0-9 ]+/g, "").trim() || "tester";
+      const fname = `Tree Survey ideas ${who} ${today()}.csv`;
+      const blob = new Blob([ideasCsv(send, s.consultant)], { type: "text/csv" });
+      const file = new File([blob], fname, { type: "text/csv" });
+      let shared = false;
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: fname, text: `${send.length} ideas and problems from Tree Survey` }); shared = true; }
+        catch (e) { if (e.name === "AbortError") { toast("Not sent"); return; } }
+      }
+      if (!shared) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
+      send.forEach(i => { i.sent = Date.now(); }); await DB.put("settings", rec);
+      toast(shared ? "Sent" : `Saved ${fname} to Downloads`, 3500); draw();
+    };
+    if ($("#ideaClear")) $("#ideaClear").onclick = async () => {
+      const n = rec.items.filter(i => i.sent).length;
+      if (!n) { toast("Nothing has been sent yet"); return; }
+      if (!confirm(`Remove ${n} note${n === 1 ? "" : "s"} already sent from this device?`)) return;
+      rec.items = rec.items.filter(i => !i.sent); await DB.put("settings", rec); draw();
+    };
+  };
+  draw();
+}
+
 async function homePage() {
   const jobs = (await DB.all("jobs")).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   const st_ = await settings();
   const trees = await DB.all("trees");
   const count = id => trees.filter(t => t.jobId === id).length;
   const worksOnly = jobs.length && jobs.every(isWorks) && !st_.surveyTools;  // a contractor's phone: just their works orders
+  // This device holds the only copy until a survey is exported: say so plainly when there is something to lose.
+  let safe = true;
+  try { safe = !navigator.storage || !navigator.storage.persisted || await navigator.storage.persisted(); } catch (e) { }
+  if (!safe && navigator.storage.persist) { try { safe = await navigator.storage.persist(); } catch (e) { } }   // ask again: browsers grant it once the app is used or installed
+  const atRisk = jobs.filter(j => !isWorks(j) && count(j.id) && (!j.exported || j.updated > j.exported));
+  const oldest = atRisk.length ? Math.min(...atRisk.map(j => j.exported || j.created || Date.now())) : 0;
+  const hrs = oldest ? Math.floor((Date.now() - oldest) / 3600000) : 0;
+  const ideas = FEEDBACK ? ((await DB.get("settings", "ideas")) || { items: [] }).items : [];
   app.innerHTML = `
   <header class="top"><h1><img src="icons/favicon-48.png" alt="" class="hlogo">Tree Survey</h1><button aria-label="Settings" onclick="go('#/settings')">⚙</button></header>
   <main>
+    ${atRisk.length && hrs >= 3 ? `<div class="warn" id="exportWarn">⚠ ${atRisk.length === 1 ? `<b>${esc(atRisk[0].site || "A survey")}</b> has` : `<b>${atRisk.length} surveys</b> have`} work that has not been exported${hrs >= 3 ? ` for ${hrs >= 48 ? Math.floor(hrs / 24) + " days" : hrs + " hours"}` : ""}. This device holds the only copy – open the survey and tap <b>Export</b>.</div>` : ""}
+    ${!safe && jobs.length ? `<div class="warn" id="storeWarn">⚠ This browser has not agreed to protect the app's data from automatic clean-up. ${installed() ? "Export your surveys regularly." : "<b>Install the app</b> (the button at the bottom of this page, or the browser's menu → Install / Add to Home Screen) and export your surveys regularly."}</div>` : ""}
     ${worksOnly ? "" : `<button class="btn primary block" onclick="go('#/new')">＋ New site survey</button>
     <button class="btn block" style="margin-top:8px" onclick="go('#/quote/new')">📷 ＋ Quote visit – photos, works, crew and kit</button>
     <button class="btn block" style="margin-top:8px" onclick="go('#/notes')">📝 Route notes – daily site note (PDF)</button>`}
@@ -275,6 +361,7 @@ async function homePage() {
       </a>`).join("") : `<div class="empty">No surveys yet.<br>Tap <b>New site survey</b> to start.</div>`}
     <p class="hint">${worksOnly ? "Works orders are saved on this phone and work without signal. Open each one to sign in, record the works and send the return when you've finished."
       : "Surveys are saved on this device and work without signal. Tap <b>Export</b> on each site when you're done to send it to your PC (OneDrive, email…)."}</p>
+    ${FEEDBACK ? `<button class="btn block" style="margin-top:8px" onclick="go('#/ideas')">💡 Ideas and problems – note one for the developer${ideas.length ? ` (${ideas.filter(i => !i.sent).length} to send)` : ""}</button>` : ""}
     <div class="row">
       <button class="btn small" onclick="restoreZip()">Open a zip (works pack, survey or plans)</button>
       ${worksOnly ? `<button class="btn small" id="survtools">Survey tools</button>` : ""}
