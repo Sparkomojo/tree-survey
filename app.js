@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.71";
+const APP_VERSION = "1.72";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -1658,8 +1658,11 @@ async function buildZip(jobId) {
     ? [[t.lat, t.lon]].concat((t.via || []).map(p => [p.lat, p.lon]), [[t.end.lat, t.end.lon]]).map(p => `${(+p[0]).toFixed(6)} ${(+p[1]).toFixed(6)}`).join("; ") : "";
   const withPts = trees.some(t => linePts(t));  // a tag already on the tree from an earlier survey – kept apart from our own number
   const withLife = !bs && trees.some(t => t.lifeStage);  // the BS 5837 sheet has its own Life Stage column
-  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withCol ? ["Plan Colour"] : []).concat(withLife ? ["Life Stage"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []);
-  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withCol ? [colName(t)] : []).concat(withLife ? [t.lifeStage || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []);
+  // the day each tree was recorded, so the report can give every day of a survey that took several
+  const dayOf = t => { const d = new Date(t.created || t.updated || 0); return t.created || t.updated ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : ""; };
+  const withDate = trees.some(t => t.created || t.updated);
+  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withCol ? ["Plan Colour"] : []).concat(withLife ? ["Life Stage"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []).concat(withDate ? ["Date Recorded"] : []);
+  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withCol ? [colName(t)] : []).concat(withLife ? [t.lifeStage || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []).concat(withDate ? [dayOf(t)] : []);
   const head0 = bs ? BS_HEAD : AMR_HEAD.map(h => h === "Crown Spread (m)" ? crownHead(job) : h).concat(withRisk ? RISK_HEAD : [], withCavat ? ["CAVAT (£)"] : [], withChange ? ["Change Since Last Survey"] : [], withZone ? ["Zone"] : [], withVet ? ["Veteran Features"] : [], withLine ? ["End Grid Ref", "End Latitude", "End Longitude"] : []);
   const head = head0.concat(extraHead);
   const ws = XLSX.utils.aoa_to_sheet([head, ...trees.map(t => treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, withLine).concat(extra(t)))]);

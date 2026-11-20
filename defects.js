@@ -85,8 +85,10 @@ function defectText(d) {
     if (where) s += " " + where;
     // a height, or a range of heights ("from 1.5 to 4 m") – always written low to high
     const h1 = parseFloat(d.height), h2 = parseFloat(d.height2);
-    if (d.height && d.height2 && h1 !== h2 && !isNaN(h1) && !isNaN(h2)) s += ` from ${h1 < h2 ? d.height : d.height2} to ${h1 < h2 ? d.height2 : d.height} m`;
-    else if (d.height || d.height2) s += ` at ${d.height || d.height2} m`;
+    // the base and the root plate are at ground level: a height with only those is a second place ("at the base and at 3 m")
+    const ground = where && partList(d.part).every(n => n === "Root plate" || n === "Base") && (d.height || d.height2) ? " and" : "";
+    if (d.height && d.height2 && h1 !== h2 && !isNaN(h1) && !isNaN(h2)) s += `${ground} from ${h1 < h2 ? d.height : d.height2} to ${h1 < h2 ? d.height2 : d.height} m`;
+    else if (d.height || d.height2) s += `${ground} at ${d.height || d.height2} m`;
     if (d.aspect) s += ` on the ${aspectWord(d.aspect)} side`;
   }
   if (d.size) {
