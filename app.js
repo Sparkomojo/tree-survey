@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.72";
+const APP_VERSION = "1.73";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -405,7 +405,7 @@ async function detailsPage(id) {
   <main>
     <label>Survey type</label>
     <div class="chips" id="type">${[["AMR", "AMR (management report)"], ["BS5837", "BS5837 (AIA / AMS)"], ["NEST", "Nesting bird check"], ["PROPERTY", "Property (mortgage / subsidence)"], ["ESTAB", "Young tree establishment check"]].map(([t, l]) => `<button class="chip ${job.type === t ? "on" : ""}" data-v="${t}">${l}</button>`).join("")}</div>
-    <label for="client">Client</label><input id="client" value="${esc(job.client)}" autocomplete="organization" placeholder="e.g. Patchwork Project">
+    <label for="client">Client</label><input id="client" value="${esc(job.client)}" autocomplete="organization" placeholder="e.g. Oakbank Community Trust">
     <div id="fmtwrap" hidden><label>Report format (Scottish Woodlands)</label>
       <div class="chips" id="format">${[["Roadside/PROW", "Roadside / PROW"], ["Parkland", "Parkland (AMR)"]].map(([v, l]) => `<button class="chip ${job.format === v ? "on" : ""}" data-v="${v}">${l}</button>`).join("")}</div></div>
     <label class="check" id="bandswrap"><input type="checkbox" id="bands" ${job.bands ? "checked" : ""}> Record height, DBH and spread in bands (e.g. 6 - 10 m)</label>
@@ -424,8 +424,8 @@ async function detailsPage(id) {
     <div id="crownwrap"><label>Crown recorded as</label>
       <div class="chips" id="crownMode">${CROWN_MODES.map(([v, l]) => `<button class="chip ${(job.crownMode || "spread") === v ? "on" : ""}" data-v="${v}">${l}</button>`).join("")}</div></div>
     <div id="boltwrap"></div>
-    <label for="site">Site name</label><input id="site" value="${esc(job.site)}" placeholder="e.g. Bells Haven Wood">
-    <label for="address">Address (commas between parts)</label><input id="address" value="${esc(job.address)}" placeholder="Riverside Way, Rowlands Gill, Tyne and Wear, NE39 1DD">
+    <label for="site">Site name</label><input id="site" value="${esc(job.site)}" placeholder="e.g. Oakbank Wood">
+    <label for="address">Address (commas between parts)</label><input id="address" value="${esc(job.address)}" placeholder="Mill Lane, Anytown, Anyshire, AB1 2CD">
     <label for="cavatLA">Local authority (council)</label>
     <div style="display:flex;gap:8px"><input id="cavatLA" list="laList" value="${esc(job.cavatLA || "")}" placeholder="e.g. Gateshead" autocomplete="off" style="flex:1">
       <button class="btn small" id="laLook" type="button">Look up</button></div>
