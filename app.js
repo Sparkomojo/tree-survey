@@ -8,12 +8,16 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.70";
+const APP_VERSION = "1.71";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
 const applyTextSize = v => { try { localStorage.setItem("tree-survey-text", v); } catch (e) { } document.documentElement.dataset.text = v === "Standard" ? "" : v.toLowerCase(); };
 document.documentElement.dataset.text = textSize() === "Standard" ? "" : textSize().toLowerCase();
+// order of a survey's tree list (Settings): as recorded, or the latest tree at the top. This device only; exports stay in tag order.
+const LIST_ORDERS = ["Oldest first", "Newest first"];
+const listOrder = () => { try { return localStorage.getItem("tree-survey-list") === "Newest first" ? "Newest first" : "Oldest first"; } catch (e) { return "Oldest first"; } };
+const setListOrder = v => { try { localStorage.setItem("tree-survey-list", v); } catch (e) { } };
 const AMR_HEAD = ["Site", "Tag", "W3W / Grid Ref", "Species", "Height (m)", "DBH (mm)", "Crown Spread (m)",
   "Comments", "Recommendations", "Ash Dieback", "Constraints", "Latitude", "Longitude", "Accuracy (m)", "Bat PRF"];
 const BS_HEAD = ["Tag", "TPO", "Species", "Height (m)", "Stem Diameter (mm)", "No. of Stems", "Crown Spread N",
@@ -545,7 +549,7 @@ async function jobPage(id, treesOnly) {
       ${(() => { const c = safetyToday(job); return `<button class="btn small ${c ? (c.proceed ? "" : "danger") : "warnbtn"}" onclick="go('#/job/${id}/safety')">${c ? (c.proceed ? "✓ Safety check done" : "✕ Not safe today") : "⚠ Safety check"}</button>`; })()}
     </div>
     ${trees.length > 6 ? `<input class="search" id="q" placeholder="Find a tree (tag or species)" type="search">` : ""}
-    <div id="list">${trees.map(t => `
+    <div id="list">${(listOrder() === "Newest first" ? [...trees].reverse() : trees).map(t => `
       <a class="card tree" href="#/job/${id}/tree/${t.id}" data-s="${esc((t.tag + " " + t.species).toLowerCase())}">
         <div class="tag ${job.type === "BS5837" && t.category ? t.category[0] : ""}">${esc(t.tag)}</div>
         <div class="info">
@@ -1509,6 +1513,9 @@ async function settingsPage() {
     <label>Text size</label>
     <div class="chips" id="textSize">${TEXT_SIZES.map(v => `<button class="chip ${textSize() === v ? "on" : ""}" data-v="${v}">${v}</button>`).join("")}</div>
     <p class="hint">Makes the text, boxes and buttons bigger on this device. Maps stay as they are.</p>
+    <label>Tree list order</label>
+    <div class="chips" id="listOrder">${LIST_ORDERS.map(v => `<button class="chip ${listOrder() === v ? "on" : ""}" data-v="${v}">${v}</button>`).join("")}</div>
+    <p class="hint">A survey's list of trees: in the order recorded, or with the tree you recorded last at the top. Exports and reports stay in tag order.</p>
     <label for="consultant">Surveyor name</label><input id="consultant" value="${esc(s.consultant)}">
     <label for="qtraAssessors">Registered QTRA assessors (one per line: name – registration no.)</label>
     <textarea id="qtraAssessors" rows="3" placeholder="Mark Johnson – 1234">${esc((s.qtraAssessors || []).join("\n"))}</textarea>
@@ -1543,6 +1550,8 @@ async function settingsPage() {
   $("#reset").onclick = () => { for (const k of Object.keys(DEFAULT_PHRASES)) $("#p_" + k).value = DEFAULT_PHRASES[k].join("\n"); };
   $("#textSize").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; e.preventDefault(); applyTextSize(b.dataset.v);
     $("#textSize").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); };
+  $("#listOrder").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; e.preventDefault(); setListOrder(b.dataset.v);
+    $("#listOrder").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); };
   const qtraShow = async () => {
     const q = await DB.get("settings", "qtraTable");
     $("#qtraState").textContent = q && q.roh ? `Loaded on this device: ${Object.keys(q.roh).length} combinations from ${q.source || "a file"} on ${q.installed || "?"}.` : "No table on this device – the Risk of Harm is typed.";
