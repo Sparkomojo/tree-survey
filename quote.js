@@ -53,7 +53,7 @@ const isQuote = j => !!j && j.type === "QUOTE";
 function qInit(job) {
   for (const k of ["access", "activities", "plant", "equipment", "works"]) job[k] = job[k] || [];
   job.crew = job.crew || [];
-  job.consultant = job.consultant || { survey: [], trees: "", hours: "", kit: [] };
+  job.consultant = Object.assign({ survey: [], trees: "", hours: "", kit: [], fee: "" }, job.consultant || {});
   return job;
 }
 function quoteCard(j) {
@@ -82,6 +82,7 @@ async function quoteDetailsPage(id) {
       <div><label for="q_contact">Contact</label><input id="q_contact" value="${esc(job.contact || "")}"></div>
       <div><label for="q_phone">Phone</label><input id="q_phone" type="tel" value="${esc(job.phone || "")}"></div>
     </div>
+    <label for="q_email">Email</label><input id="q_email" type="email" value="${esc(job.email || "")}" autocapitalize="none" autocomplete="off" spellcheck="false">
     <div class="grid2">
       <div><label for="q_date">Visit date</label><input id="q_date" type="date" value="${esc(job.visitDate || today())}"></div>
       <div><label for="q_w3w">what3words</label><input id="q_w3w" value="${esc(job.w3w || "")}" placeholder="///word.word.word"></div>
@@ -99,7 +100,7 @@ async function quoteDetailsPage(id) {
     Object.assign(job, f); $("#q_pos").textContent = `${f.grid} (±${f.acc} m)`;
   };
   $("#q_save").onclick = async () => {
-    for (const k of ["client", "site", "address", "contact", "phone", "w3w"]) job[k] = $("#q_" + k).value.trim();
+    for (const k of ["client", "site", "address", "contact", "phone", "email", "w3w"]) job[k] = $("#q_" + k).value.trim();
     job.visitDate = $("#q_date").value || today();
     if (!job.site && !job.client) { toast("Fill in the client or the site"); return; }
     job.updated = Date.now(); st.quoteMode = job.mode; await DB.put("settings", st);
@@ -119,6 +120,7 @@ async function quotePage(job) {
   const accessList = ls ? Q_ACCESS_LS : Q_ACCESS;
   const workList = ls ? RESOURCES.works.filter(w => w.key.startsWith("ls_")).concat(RESOURCES.works.filter(w => !w.key.startsWith("ls_"))) : RESOURCES.works;
   const urls = [];
+  const qs = qqSet(await settings());
   const draw = async () => {
     urls.splice(0).forEach(u => URL.revokeObjectURL(u));
     const ph = (await DB.by("photos", "job", job.id)).filter(p => p.role === "quote").sort((a, b) => a.created - b.created);
@@ -130,7 +132,8 @@ async function quotePage(job) {
       <h1>${esc(job.site || job.client || "Quote visit")}<span class="sub">${esc(job.client || "")} · ${ukDate(job.visitDate)}</span></h1>
       <button aria-label="Visit details" onclick="go('#/job/${job.id}/details')">✎</button></header>
     <main>
-      <div class="row"><button class="btn green" id="q_export">⇪ Export to the PC</button></div>
+      <div class="row"><button class="btn green" id="q_export">⇪ Export to the PC</button><button class="btn" id="q_quick">£ Quick quote</button></div>
+      ${job.quote && job.quote.made ? `<p class="hint">Quick quote ${esc(job.quote.ref)} made ${ukDate(job.quote.date)}: ${qqMoney(job.quote.total)}${job.quote.rate ? " with VAT" : ""}.${qqStale(job, qs) ? ` <b class="no">The prices have changed since – make it again if the client needs the new figure.</b>` : ""}</p>` : ""}
       <h2>Photos</h2>
       <div class="qthumbs">${ph.filter(p => !p.item).map(thumb).join("")}</div>
       <div class="row"><button class="btn small" id="q_cam">📷 Photo</button><button class="btn small" id="q_gal">From the gallery…</button></div>
@@ -151,6 +154,8 @@ async function quotePage(job) {
         <div><label for="q_trees">Trees (estimate)</label><input id="q_trees" type="number" min="0" inputmode="numeric" value="${esc(job.consultant.trees || "")}"></div>
         <div><label for="q_hours">Time on site (hours)</label><input id="q_hours" type="number" min="0" step="0.5" inputmode="decimal" value="${esc(job.consultant.hours || "")}"></div>
       </div>
+      <label for="q_fee">Fee £ before VAT (optional)</label><input id="q_fee" type="number" min="0" step="1" inputmode="decimal" value="${esc(job.consultant.fee || "")}">
+      <p class="hint">With a fee, the PC drafts the fee proposal when this visit is imported, and £ Quick quote can send a short quotation now.</p>
       <label>Equipment</label>
       <div class="chips" id="q_ckit">${Q_CKIT.map(s => `<button class="chip ${job.consultant.kit.includes(s) ? "on" : ""}" data-v="${esc(s)}">${esc(s)}</button>`).join("")}</div>`
       : `
@@ -185,7 +190,7 @@ async function quotePage(job) {
     if (con) {
       $("#q_survey").onclick = async e => { const b = e.target.closest(".chip"); if (!b) return; toggle(job.consultant.survey, b.dataset.v); b.classList.toggle("on"); await save(); };
       $("#q_ckit").onclick = async e => { const b = e.target.closest(".chip"); if (!b) return; toggle(job.consultant.kit, b.dataset.v); b.classList.toggle("on"); await save(); };
-      for (const k of ["trees", "hours"]) $("#q_" + k).oninput = e => { job.consultant[k] = e.target.value; save(); };
+      for (const k of ["trees", "hours", "fee"]) $("#q_" + k).oninput = e => { job.consultant[k] = e.target.value; save(); };
     } else {
       $("#q_work").onclick = async e => {
         const b = e.target.closest(".chip"); if (!b) return;
@@ -208,6 +213,7 @@ async function quotePage(job) {
     }
     $("#q_notes").oninput = e => { job.notes = e.target.value; save(); };
     $("#q_export").onclick = () => qExport(job.id);
+    $("#q_quick").onclick = () => go(`#/job/${job.id}/qquote`);
   };
   leaveHook = async () => { const n = $("#q_notes"); if (n) job.notes = n.value; await DB.put("jobs", job); urls.forEach(u => URL.revokeObjectURL(u)); };
   draw();
@@ -322,15 +328,22 @@ async function buildQuoteZip(jobId) {
     return { file: f, caption: p.caption || "", item: p.item ? String(num(p.item)) : "", when: p.when || new Date(p.created).toISOString(), lat: p.lat, lon: p.lon, grid: p.grid };
   });
   const st = await settings();
+  let quote = null;
+  if (job.quote && job.quote.made) {
+    const q = job.quote, rec = await DB.get("photos", "qq-" + job.id);
+    quote = { ref: q.ref, date: q.date, net: q.net, vatRate: q.rate, vat: q.vatAmount, total: q.total, validDays: Math.round(qNum(q.valid)) || 30,
+      itemised: !!q.itemised, lump: job.mode === "consultant" ? 0 : qNum(q.lump), notes: q.notes || "", changedSince: qqStale(job, qqSet(st)), file: "" };
+    if (rec && rec.blob) { quote.file = qqFile(job); zip.file(quote.file, rec.blob, { binary: true }); }
+  }
   zip.file("quote_visit.json", JSON.stringify({
     format: "quote-visit", version: 1, app: APP_VERSION, exported: new Date().toISOString(), id: job.id,
-    job: { client: job.client, site: job.site, address: job.address, contact: job.contact, phone: job.phone, w3w: job.w3w,
+    job: { client: job.client, site: job.site, address: job.address, contact: job.contact, phone: job.phone, email: job.email || "", w3w: job.w3w,
       lat: job.lat, lon: job.lon, grid: job.grid, visitDate: job.visitDate, mode: job.mode, by: st.consultant || "",
       access: job.access, notes: job.notes, days: job.days, consultant: job.mode === "consultant" ? job.consultant : null },
     works: job.works.filter(w => w.what || w.works || w.kind).map(w => Object.assign({ id: w.id, what: w.what || (job.mode === "landscaper" ? w.kind || "" : ""), works: w.works, notes: w.notes || "", price: w.price || "" },
       job.mode === "landscaper" && qKind(w) ? { kind: w.kind, calc: qKind(w)[1], length: qNum(w.length), width: qNum(w.width), depth: qNum(w.depth), area: qNum(w.area),
         qty: qNum(w.qty), fence: w.fence || "", measure: qMeasure(w) } : {})),
-    activities: job.activities, crew: job.crew, plant: job.plant, equipment: job.equipment, photos: out,
+    activities: job.activities, crew: job.crew, plant: job.plant, equipment: job.equipment, photos: out, quote,
   }, null, 1));
   const blob = await zip.generateAsync({ type: "blob", mimeType: "application/zip" });
   return { blob, fname: `${safeName(job.site || job.client)} quote visit ${job.visitDate || today()}.zip`, job, photos: out.length };
@@ -353,4 +366,287 @@ async function qExport(jobId) {
   out.job.exported = Date.now(); out.job.updated = out.job.exported - 1; await DB.put("jobs", out.job);
   toast(shared ? "Visit sent" : `Saved ${out.fname} to Downloads – open it on the PC with Quote visits → Import from phone`, 5000);
   route();
+}
+
+// ------------------------------------------------------------------ quick quote: a short PDF made on the phone
+/* A priced quotation to send from site: the items and prices (or one price for the job), VAT, the firm's standard wording,
+   logo and contact details – all typed once in Settings → Quick quotes and kept on this device only. The PDF travels to the
+   PC inside the visit's export, where the full quotation or fee proposal is drafted from the same figures. */
+const QQ_WORDING = {
+  contractor: ["Work to BS 3998:2010 Tree work – Recommendations, where it applies.",
+    "Trees covered by a Tree Preservation Order or in a Conservation Area need the council's consent or notice before work starts.",
+    "Work stops if an active bird's nest is found, and resumes when it is lawful."],
+  landscaper: ["Sizes were measured on site and are approximate; the price is for the work described.",
+    "Any extra work found to be needed once the job has started is agreed with you before it is done."],
+  consultant: ["The fee covers the site visit and the report described above.",
+    "Our full fee proposal and terms of business follow by email."],
+};
+function qqSet(st) {   // the firm's own details for quick quotes, with the defaults filled in
+  const q = Object.assign({ name: "", phone: "", email: "", web: "", footer: "", vatReg: true, vatRate: 20, validDays: 30, logo: null }, st.quote || {});
+  q.wording = Object.assign({}, QQ_WORDING, q.wording || {});
+  return q;
+}
+const qqMoney = v => "£" + (Math.round(v * 100) / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const qqItems = job => job.works.filter(w => w.what || w.works || w.kind);
+function qqRef(job, date) {   // the same form as the PC's quotation reference: Q-yymmdd-ABC
+  const d = (date || today()).replace(/-/g, "").slice(2);
+  return `Q-${d}-${((job.client || "X").toUpperCase().replace(/[^A-Z]/g, "") || "X").slice(0, 3)}`;
+}
+function qqTotals(job, qs) {
+  const q = job.quote || {}, con = job.mode === "consultant", items = qqItems(job);
+  const lump = qNum(con ? job.consultant.fee : q.lump);
+  const sum = items.reduce((a, w) => a + qNum(w.price), 0);
+  const unpriced = items.filter(w => !qNum(w.price)).length;
+  const net = Math.round((lump || (con ? 0 : sum)) * 100) / 100;
+  const rate = q.vat ? qNum(qs.vatRate) : 0;
+  const vat = Math.round(net * rate) / 100;
+  return { net, rate, vat, total: Math.round((net + vat) * 100) / 100, itemised: !lump && !con && items.length > 0 && !unpriced,
+    lump: !!lump, ready: net > 0 && (!!lump || (!con && items.length > 0 && !unpriced)), unpriced };
+}
+// the standard PDF fonts only hold Western European characters: swap what they can't show
+const qqText = s => String(s == null ? "" : s).replace(/[‘’′]/g, "'").replace(/[“”″]/g, '"').replace(/[–—−]/g, "-")
+  .replace(/…/g, "...").replace(/ /g, " ").replace(/[•●]/g, "-").replace(/≥/g, ">=").replace(/≤/g, "<=")
+  .replace(/[^\x09\x0A\x20-\x7E¡-ÿ]/g, "");
+const qqDataUrl = blob => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => bad(r.error); r.readAsDataURL(blob); });
+async function qqLogoFrom(file) {   // a logo for the letterhead: on white (PDFs have no see-through JPEGs), 700 px at most
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, 700 / Math.max(bmp.width, bmp.height)), c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close && bmp.close();
+  return { url: c.toDataURL("image/jpeg", 0.9), w: c.width, h: c.height };
+}
+
+async function qqPDF(job, qs, photos) {
+  await rnScript("lib/jspdf.umd.min.js");
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const q = job.quote, t = qqTotals(job, qs), con = job.mode === "consultant", items = qqItems(job);
+  const L = 18, R = 192, W = R - L, BOTTOM = 272;
+  let y = 16;
+  const font = (size, bold, grey) => { doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); doc.setTextColor(grey ? 95 : 20); };
+  const room = h => { if (y + h > BOTTOM) { doc.addPage(); y = 20; } };
+  const para = (text, size = 10, gap = 4.6, x = L, w = W, bold = false) => {
+    font(size, bold);
+    for (const line of doc.splitTextToSize(qqText(text), w)) { room(gap); doc.text(line, x, y); y += gap; }
+  };
+  const head = text => { y += 3; room(12); font(11.5, true); doc.text(qqText(text), L, y); y += 6; };
+  // letterhead: logo on the left, the firm's name and contact details on the right
+  let top = y;
+  if (qs.logo && qs.logo.url) {
+    const k = Math.min(58 / qs.logo.w, 24 / qs.logo.h), w = qs.logo.w * k, h = qs.logo.h * k;
+    try { doc.addImage(qs.logo.url, "JPEG", L, y - 4, w, h); top = y - 4 + h; } catch (e) { console.warn(e); }
+  }
+  let ry = y;
+  if (qs.name) { font(13, true); doc.text(qqText(qs.name), R, ry, { align: "right" }); ry += 6; }
+  font(9.5, false, true);
+  for (const line of [qs.phone, qs.email, qs.web].filter(Boolean)) { doc.text(qqText(line), R, ry, { align: "right" }); ry += 4.6; }
+  y = Math.max(top, ry) + 6;
+  doc.setDrawColor(190); doc.setLineWidth(0.3); doc.line(L, y, R, y); y += 10;
+  font(17, true); doc.text(con ? "Fee quotation" : "Quotation", L, y); y += 9;
+  // who and where, with the reference and date alongside
+  const d = q.date || today();
+  const who = job.contact && job.client && job.client.toLowerCase().includes(job.contact.toLowerCase()) ? job.client : [job.contact, job.client].filter(Boolean).join(", ");
+  const left = [["To", who], ["Site", [job.site, job.address].filter(Boolean).join(", ")]].filter(r => r[1]);
+  const right = [["Reference", q.ref], ["Date", ukDate(d)], ["Valid for", `${Math.round(qNum(q.valid) || qs.validDays || 30)} days`]];
+  const y0 = y; let yl = y0, yr = y0;
+  for (const [k, v] of left) {
+    font(9.5, true); doc.text(k, L, yl);
+    font(9.5); const ls = doc.splitTextToSize(qqText(v), 92); doc.text(ls, L + 14, yl); yl += ls.length * 4.6 + 1.6;
+  }
+  for (const [k, v] of right) { font(9.5, true); doc.text(k, 132, yr); font(9.5); doc.text(qqText(v), 154, yr); yr += 6.2; }
+  y = Math.max(yl, yr) + 5;
+  // the items
+  const desc = w => [w.what && w.kind && w.what !== w.kind ? `${w.kind} - ${w.what}` : (w.what || w.kind || ""), qMeasure(w), w.works].filter(Boolean);
+  const cols = t.itemised ? [L, L + 10, R - 30] : [L, L + 10, R];
+  const dw = cols[2] - cols[1] - 3;
+  head(con ? "The survey" : job.mode === "landscaper" ? "The work" : "Works");
+  if (con && job.consultant.survey.length) { para(job.consultant.survey.join(", ") + ".", 10, 4.8); y += 3; }
+  if (items.length) {
+    font(9, true, true); room(8);
+    doc.text("Item", cols[0], y); doc.text(con ? "Tree, group or area" : "Description", cols[1], y);
+    if (t.itemised) doc.text("Price", R, y, { align: "right" });
+    y += 2; doc.setDrawColor(150); doc.line(L, y, R, y); y += 5;
+    items.forEach((w, i) => {
+      const parts = desc(w), lines = [];
+      parts.forEach((p, k) => doc.splitTextToSize(qqText(p), dw).forEach(s => lines.push([s, k === 0])));
+      room(Math.min(lines.length, 6) * 4.6 + 3);
+      font(10); doc.text(String(i + 1), cols[0], y);
+      if (t.itemised) doc.text(qqMoney(qNum(w.price)), R, y, { align: "right" });
+      for (const [s, first] of lines) { room(4.6); font(10, first); doc.text(s, cols[1], y); y += 4.6; }
+      y += 1.2; doc.setDrawColor(215); doc.line(L, y - 3, R, y - 3); y += 2;
+    });
+  }
+  // the price
+  y += 2; room(26);
+  const rows = t.rate ? [[con ? "Fee (ex VAT)" : "Price (ex VAT)", qqMoney(t.net)], [`VAT (${t.rate}%)`, qqMoney(t.vat)], ["Total", qqMoney(t.total)]]
+    : [[con ? "Fee" : "Price", qqMoney(t.net)]];
+  rows.forEach(([k, v], i) => { const last = i === rows.length - 1; font(last ? 11.5 : 10, last);
+    doc.text(k, R - 62, y); doc.text(v, R, y, { align: "right" }); y += last ? 7 : 5.6; });
+  if (!t.rate && q.noVatNote) para(q.noVatNote, 9, 4.4);
+  // wording, notes, acceptance
+  const words = (qs.wording[job.mode] || []).map(s => String(s).trim()).filter(Boolean);
+  if (words.length) {
+    head("Please note");
+    for (const s of words) { room(5); font(10); doc.text("-", L, y); para(s, 10, 4.8, L + 4, W - 4); y += 1; }
+  }
+  if ((q.notes || "").trim()) { head("Notes"); q.notes.trim().split(/\n+/).forEach(s => { para(s, 10, 4.8); y += 1.2; }); }
+  head("Acceptance");
+  para(`To accept this quotation, reply to ${[qs.email, qs.phone].filter(Boolean).join(" or ") || "us"} quoting ${q.ref}, or sign below.`, 10, 4.8);
+  y += 10; room(14); doc.setDrawColor(120);
+  doc.line(L, y, L + 70, y); doc.line(L + 85, y, L + 125, y);
+  font(8.5, false, true); doc.text("Signed for the client", L, y + 4); doc.text("Date", L + 85, y + 4); y += 10;
+  // photos, four to a page
+  const CW = 84, CH = 96, GX = 6, CAP = 14;
+  (photos || []).forEach((p, i) => {
+    const k = i % 4;
+    if (k === 0) { doc.addPage(); font(11.5, true); doc.text("Photographs from the site visit", L, 20); }
+    const cx = L + (k % 2) * (CW + GX), cy = 26 + Math.floor(k / 2) * (CH + CAP + 6);
+    const r = Math.min(CW / p.w, CH / p.h), w = p.w * r, h = p.h * r;
+    doc.addImage(p.url, "JPEG", cx + (CW - w) / 2, cy + (CH - h) / 2, w, h);
+    font(9); doc.text(doc.splitTextToSize(qqText(p.cap), CW).slice(0, 2), cx, cy + CH + 5);
+  });
+  // the footer on every page: the firm's own registered / legal line, and the page number
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i); font(8, false, true);
+    const f = doc.splitTextToSize(qqText(qs.footer || ""), W - 20).slice(0, 3);
+    if (f.length && f[0]) doc.text(f, 105, 284, { align: "center" });
+    doc.text(`${q.ref} - page ${i} of ${n}`, R, 292, { align: "right" });
+  }
+  return doc.output("blob");
+}
+
+async function qqPhotos(job) {   // up to eight of the visit's photos, as the PDF needs them
+  const ph = (await DB.by("photos", "job", job.id)).filter(p => p.role === "quote").sort((a, b) => a.created - b.created).slice(0, 8);
+  const num = id => job.works.findIndex(w => w.id === id) + 1, out = [];
+  for (const p of ph) {
+    try {
+      const bmp = await createImageBitmap(p.blob), k = Math.min(1, 1200 / Math.max(bmp.width, bmp.height)), c = document.createElement("canvas");
+      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k); c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      bmp.close && bmp.close();
+      out.push({ url: c.toDataURL("image/jpeg", 0.8), w: c.width, h: c.height, cap: [p.item && num(p.item) ? `Item ${num(p.item)}` : "", p.caption].filter(Boolean).join(" - ") });
+    } catch (e) { console.warn("photo left out of the quote", e); }
+  }
+  return out;
+}
+const qqFile = job => `Quick quote ${safeName(job.quote.ref)}.pdf`;
+async function qqShare(blob, fname, text) {   // → true when it went to the share sheet, false when it was saved to Downloads
+  const file = new File([blob], fname, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: fname, text }); return true; }
+    catch (e) { if (e.name === "AbortError") return null; }
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = fname;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  return false;
+}
+
+async function quickQuotePage(jobId) {
+  const job = await DB.get("jobs", jobId); if (!job || !isQuote(job)) return go("#/");
+  qInit(job);
+  const st = await settings(), qs = qqSet(st), con = job.mode === "consultant", ls = job.mode === "landscaper";
+  const q = job.quote = Object.assign({ vat: !!qs.vatReg, valid: qs.validDays, lump: "", notes: "", photos: false }, job.quote || {});
+  const items = qqItems(job);
+  const save = async () => { job.updated = Date.now(); await DB.put("jobs", job); };
+  const sums = () => {
+    const t = qqTotals(job, qs);
+    $("#qq_sum").innerHTML = t.net ? `${con ? "Fee" : "Price"} ${qqMoney(t.net)}${t.rate ? ` + VAT ${qqMoney(t.vat)} = <b>${qqMoney(t.total)}</b>` : ""}` : "No price yet.";
+    $("#qq_why").textContent = t.ready ? "" : con ? "Type the fee." : !items.length ? "Type one price for the whole job (or go back and add the works items)."
+      : `Price ${t.unpriced === items.length ? "the items" : `the other ${t.unpriced} item${t.unpriced === 1 ? "" : "s"}`}, or type one price for the whole job.`;
+    $("#qq_make").disabled = !t.ready;
+  };
+  const sentLine = () => q.made ? `Last made ${new Date(q.made).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}: ${esc(q.ref)} for ${qqMoney(q.total)}.` : "";
+  app.innerHTML = `
+  <header class="top"><button aria-label="Back" onclick="go('#/job/${jobId}')">‹</button><h1>Quick quote<span class="sub">${esc(job.site || job.client || "")}</span></h1></header>
+  <main>
+    ${qs.name ? "" : `<p class="hint"><b class="no">Your business details aren't set yet.</b> Add your name, phone, email and logo once in <a href="#/settings">⚙ Settings → Quick quotes</a> – they go at the top of every quote.</p>`}
+    <p class="hint">A short priced quotation as a PDF, to send before you leave site. It goes to the PC with the visit's export, where the full ${con ? "fee proposal" : "quotation"} is drafted from the same figures.</p>
+    <div class="grid2">
+      <div><label for="qq_ref">Reference</label><input id="qq_ref" value="${esc(q.ref || qqRef(job))}" autocapitalize="characters" autocomplete="off"></div>
+      <div><label for="qq_valid">Valid for (days)</label><input id="qq_valid" type="number" min="1" step="1" inputmode="numeric" value="${esc(q.valid || qs.validDays)}"></div>
+    </div>
+    ${con ? `<h2>The fee</h2>
+      <p class="hint">${esc(job.consultant.survey.join(", ") || "Tick the kind of survey on the visit page.")}${items.length ? ` · ${items.length} tree${items.length === 1 ? "" : "s"} or area${items.length === 1 ? "" : "s"} listed` : ""}</p>
+      <label for="qq_lump">Fee £ (before VAT)</label><input id="qq_lump" type="number" min="0" step="1" inputmode="decimal" value="${esc(job.consultant.fee || "")}">`
+    : `<h2>Prices</h2>
+      ${items.map((w, i) => `<div class="qqrow"><label for="qq_p${i}">${i + 1}. ${esc(w.what || w.kind || "Item")}${w.works ? `<span>${esc(w.works)}</span>` : ""}</label>
+        <input id="qq_p${i}" data-i="${i}" type="number" min="0" step="1" inputmode="decimal" placeholder="£" value="${esc(w.price || "")}"></div>`).join("") || `<p class="hint">No ${ls ? "areas or features" : "works items"} on this visit yet.</p>`}
+      <label for="qq_lump">${items.length ? "Or one price for the whole job £" : "Price for the job £"} (before VAT)</label>
+      <input id="qq_lump" type="number" min="0" step="1" inputmode="decimal" value="${esc(q.lump || "")}">
+      ${items.length ? `<p class="hint">With one price for the job, the items are listed without their own prices.</p>` : ""}`}
+    <label class="check"><input type="checkbox" id="qq_vat" ${q.vat ? "checked" : ""}> Add VAT at ${esc(qs.vatRate)}%</label>
+    <p class="hint" id="qq_sum" style="font-size:16px"></p>
+    <label for="qq_notes">Notes for the client (optional)</label>
+    <textarea id="qq_notes" rows="3" placeholder="e.g. Earliest start the week of 7 December. Access needed through the side gate.">${esc(q.notes || "")}</textarea>
+    <label class="check"><input type="checkbox" id="qq_photos" ${q.photos ? "checked" : ""}> Add the visit's photos (the first 8)</label>
+    <p class="hint">The standard wording under the price comes from ⚙ Settings → Quick quotes.</p>
+    <p class="hint" id="qq_sent">${sentLine()}</p>
+    <p class="hint no" id="qq_why"></p>
+  </main>
+  <div class="bar">${q.made ? `<button class="btn" id="qq_again">Send the last one again</button>` : ""}<button class="btn primary" id="qq_make">Make the PDF ›</button></div>`;
+  const keep = () => {
+    q.ref = $("#qq_ref").value.trim() || qqRef(job); q.valid = $("#qq_valid").value; q.vat = $("#qq_vat").checked;
+    q.notes = $("#qq_notes").value; q.photos = $("#qq_photos").checked;
+    if (con) job.consultant.fee = $("#qq_lump").value; else q.lump = $("#qq_lump").value;
+    app.querySelectorAll("[data-i]").forEach(el => { items[+el.dataset.i].price = el.value; });
+  };
+  app.querySelectorAll("main input, main textarea").forEach(el => el.oninput = el.onchange = () => { keep(); sums(); save(); });
+  sums();
+  leaveHook = async () => { if ($("#qq_ref")) keep(); await DB.put("jobs", job); };
+  $("#qq_make").onclick = async () => {
+    keep();
+    const t = qqTotals(job, qs); if (!t.ready) return;
+    toast("Making the quote…", 8000);
+    try {
+      q.date = today();
+      const blob = await qqPDF(job, qs, q.photos ? await qqPhotos(job) : []);
+      await DB.put("photos", { id: "qq-" + job.id, jobId: job.id, role: "quotepdf", blob, created: Date.now() });
+      Object.assign(q, { made: Date.now(), net: t.net, rate: t.rate, vatAmount: t.vat, total: t.total, itemised: t.itemised });
+      await save();
+      const how = await qqShare(blob, qqFile(job), `${con ? "Fee quotation" : "Quotation"} ${q.ref} – ${job.site || job.client}: ${qqMoney(t.total)}`);
+      toast(how === null ? "Quote made – not sent yet" : how ? "Quote sent" : `Saved ${qqFile(job)} to Downloads`, 4000);
+      leaveHook = null; go("#/job/" + jobId);
+    } catch (e) { console.error(e); toast("Couldn't make the quote: " + e.message, 6000); }
+  };
+  if ($("#qq_again")) $("#qq_again").onclick = async () => {
+    const rec = await DB.get("photos", "qq-" + job.id);
+    if (!rec) { toast("The last quote isn't on this device any more – make it again"); return; }
+    await qqShare(rec.blob, qqFile(job), `Quotation ${q.ref} – ${job.site || job.client}: ${qqMoney(q.total)}`);
+  };
+}
+// has anything on the visit changed the price since the quick quote was made?
+function qqStale(job, qs) { const q = job.quote; if (!q || !q.made) return false; const t = qqTotals(job, qs); return Math.abs(t.total - q.total) > 0.005; }
+
+// ---- Settings → Quick quotes (the firm's own details, kept on this device)
+function qqSettingsHtml(st) {
+  const q = qqSet(st);
+  const box = (k, lab, ph = "", type = "text") => `<label for="qq_s_${k}">${lab}</label><input id="qq_s_${k}" type="${type}" value="${esc(q[k] || "")}" placeholder="${esc(ph)}" autocomplete="off">`;
+  const area = (k, lab) => `<label for="qq_w_${k}">${lab} (one point per line)</label><textarea id="qq_w_${k}" rows="4">${esc((q.wording[k] || []).join("\n"))}</textarea>`;
+  return `<h2>Quick quotes</h2>
+    <p class="hint">Your own details for the quote PDFs made from a quote visit. They stay on this device – type them on each phone or tablet that sends quotes.</p>
+    ${box("name", "Business name")}${box("phone", "Phone", "", "tel")}${box("email", "Email", "", "email")}${box("web", "Website")}
+    <label for="qq_s_footer">Footer line</label><textarea id="qq_s_footer" rows="3" placeholder="e.g. your registered name and office, company number, VAT number">${esc(q.footer || "")}</textarea>
+    <label>Logo</label>
+    <div class="row"><img id="qq_s_logo" alt="" style="max-height:56px;max-width:160px;background:#fff;border:1px solid var(--line);border-radius:6px" ${q.logo && q.logo.url ? `src="${q.logo.url}"` : "hidden"}>
+      <button class="btn small" id="qq_s_pick">Choose a logo…</button><button class="btn small" id="qq_s_nologo" ${q.logo && q.logo.url ? "" : "hidden"}>Remove</button></div>
+    <label class="check"><input type="checkbox" id="qq_s_vatReg" ${q.vatReg ? "checked" : ""}> VAT registered – add VAT to quotes</label>
+    <div class="grid2"><div>${box("vatRate", "VAT rate (%)", "", "number")}</div><div>${box("validDays", "Quotes valid for (days)", "", "number")}</div></div>
+    ${area("contractor", "Wording under the price – tree work")}${area("landscaper", "Wording under the price – landscaping")}${area("consultant", "Wording under the price – surveys and reports")}`;
+}
+function qqSettingsBind(st) {
+  let logo = qqSet(st).logo;
+  const show = () => { const im = $("#qq_s_logo"); if (logo && logo.url) { im.src = logo.url; im.hidden = false; } else im.hidden = true; $("#qq_s_nologo").hidden = !(logo && logo.url); };
+  $("#qq_s_pick").onclick = () => pickFiles("#gallery", async files => {
+    if (!files[0]) return;
+    try { logo = await qqLogoFrom(files[0]); show(); } catch (e) { toast("That picture couldn't be read – try a PNG or JPEG"); }
+  });
+  $("#qq_s_nologo").onclick = () => { logo = null; show(); };
+  return () => {   // called by Save
+    const lines = k => $("#qq_w_" + k).value.split("\n").map(x => x.trim()).filter(Boolean);
+    st.quote = { name: $("#qq_s_name").value.trim(), phone: $("#qq_s_phone").value.trim(), email: $("#qq_s_email").value.trim(), web: $("#qq_s_web").value.trim(),
+      footer: $("#qq_s_footer").value.trim(), vatReg: $("#qq_s_vatReg").checked, vatRate: qNum($("#qq_s_vatRate").value) || 20,
+      validDays: Math.round(qNum($("#qq_s_validDays").value)) || 30, logo,
+      wording: { contractor: lines("contractor"), landscaper: lines("landscaper"), consultant: lines("consultant") } };
+  };
 }

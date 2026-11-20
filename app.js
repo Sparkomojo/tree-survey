@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.69";
+const APP_VERSION = "1.70";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -181,7 +181,7 @@ async function route() {
   if (typeof LASER !== "undefined") { LASER.on = null; LASER.status = null; }
   const h = location.hash.replace(/^#\/?/, "").split("/");
   if (h[0] !== "ideas") {   // for the Ideas page: where the tester was just before it
-    const where = h[0] === "job" ? ({ tree: "Tree page", map: "Map", table: "Table", details: "Site details", photos: "Site photos", layers: "Map layers", plan: "Site plan", safety: "Site safety check" }[h[2]] || "Survey page")
+    const where = h[0] === "job" ? ({ tree: "Tree page", map: "Map", table: "Table", details: "Site details", photos: "Site photos", layers: "Map layers", plan: "Site plan", safety: "Site safety check", qitem: "Quote visit item", qquote: "Quick quote" }[h[2]] || "Survey page")
       : ({ settings: "Settings", checks: "Checks", lone: "Lone working", notes: "Route notes", new: "New survey", quote: "Quote visit" }[h[0]] || "");
     try { sessionStorage.setItem("tree-survey-last", where); } catch (e) { }
   }
@@ -194,6 +194,7 @@ async function route() {
     if (h[0] === "job" && h[2] === "wdone") return await worksDonePage(h[1]);
     if (h[0] === "job" && h[2] === "wextra") return await worksExtraPage(h[1]);
     if (h[0] === "job" && h[2] === "qitem") return await quoteItemPage(h[1], h[3]);
+    if (h[0] === "job" && h[2] === "qquote") return await quickQuotePage(h[1]);
     if (h[0] === "quote" && h[1] === "new") return await quoteDetailsPage(null);
     if (h[0] === "notes") return await routeNotesPage();
     if (h[0] === "job" && h[2] === "feat") return await featurePage(h[1], h[3], h[4]);
@@ -1528,6 +1529,7 @@ async function settingsPage() {
     <h2>what3words</h2>
     <label for="w3wKey">what3words API key (optional)</label><input id="w3wKey" value="${esc(s.w3wKey || "")}" autocapitalize="none" autocomplete="off" spellcheck="false">
     <p class="hint">Lets 📍 Here in route notes fill the what3words address from GPS (the grid reference is filled without it), and fills the grid reference from a typed address. It stays on this phone and uses your what3words plan's allowance. Without it, type or paste the address from the what3words app.</p>
+    ${qqSettingsHtml(s)}
     <h2>Quick phrases</h2>
     <label class="check"><input type="checkbox" id="askDetails" ${s.askDetails !== false ? "checked" : ""}> Ask for position, size and direction when I tap an observation</label>
     <p class="hint">These are the tap-to-add buttons under each box. Change them to your own wording.</p>
@@ -1553,7 +1555,9 @@ async function settingsPage() {
   };
   $("#qtraRemove").onclick = async () => { if (confirm("Remove the QTRA table from this device?")) { await DB.del("settings", "qtraTable"); qtraShow(); } };
   qtraShow();
+  const qqRead = qqSettingsBind(s);
   $("#save").onclick = async () => {
+    qqRead();
     s.consultant = $("#consultant").value.trim();
     s.askDetails = $("#askDetails").checked;
     s.uvf = +$("#uvf").value.replace(",", ".") || CAVAT.DEFAULT_UVF;

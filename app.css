@@ -303,3 +303,8 @@ main.wide { max-width: none; }
 .spsuggest button { display: block; width: 100%; text-align: left; padding: 11px 12px; border: 0; border-bottom: 1px solid #eef1ec; background: #fff; font-size: 0.95rem; color: #0a120d; }
 .spsuggest button:active { background: #e6f2e8; }
 .spsuggest .sphead { padding: 6px 12px; font-size: 0.78rem; font-weight: 700; color: #44524a; background: #f3f5f1; text-transform: uppercase; letter-spacing: .04em; }
+/* quick quote: an item and its price on one line */
+.qqrow { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.qqrow label { flex: 1; margin: 0; }
+.qqrow label span { display: block; font-weight: 400; font-size: 13px; color: var(--muted, #5c6b60); }
+.qqrow input { width: 110px; flex: none; text-align: right; }
