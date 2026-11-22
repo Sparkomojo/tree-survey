@@ -50,8 +50,31 @@ function sigPad(canvas, value, onChange) {
   if (value) { const im = new Image(); im.onload = () => ctx.drawImage(im, 0, 0, r.width, r.height); im.src = value; }
   ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#111";
   let down = false, last = null, inked = false;
+  // The box is locked until it is tapped, so scrolling past it with a finger can't leave a mark. Tapping anywhere
+  // else (or Done) locks it again.
+  let locked = true, has = !!value;
+  const wrap = document.createElement("div"); wrap.className = "sigwrap";
+  canvas.parentNode.insertBefore(wrap, canvas); wrap.appendChild(canvas);
+  const cover = document.createElement("button"); cover.type = "button"; cover.className = "sigcover";
+  const done = document.createElement("button"); done.type = "button"; done.className = "btn small sigdone"; done.textContent = "✓ Done signing";
+  wrap.appendChild(cover); wrap.appendChild(done);
+  const show = () => {
+    wrap.classList.toggle("open", !locked);
+    cover.hidden = !locked; done.hidden = locked;
+    cover.textContent = has ? "Tap to change the signature" : "✎ Tap here to sign";
+    cover.classList.toggle("signed", has);
+  };
+  const lock = () => { if (!locked) { locked = true; down = false; show(); } };
+  cover.onclick = e => { e.preventDefault(); locked = false; show(); };
+  done.onclick = e => { e.preventDefault(); lock(); };
+  const outside = e => {
+    if (!canvas.isConnected) { document.removeEventListener("pointerdown", outside, true); return; }
+    if (!locked && !wrap.contains(e.target)) lock();
+  };
+  document.addEventListener("pointerdown", outside, true);
+  show();
   const pt = e => { const b = canvas.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
-  canvas.onpointerdown = e => { down = true; last = pt(e); canvas.setPointerCapture(e.pointerId); e.preventDefault(); };
+  canvas.onpointerdown = e => { if (locked) return; down = true; last = pt(e); canvas.setPointerCapture(e.pointerId); e.preventDefault(); };
   canvas.onpointermove = e => {
     if (!down) return;
     const p = pt(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; inked = true;
@@ -59,11 +82,11 @@ function sigPad(canvas, value, onChange) {
   canvas.onpointerup = canvas.onpointercancel = () => {
     if (down && inked) {  // keep it small: 1× size PNG
       const c2 = document.createElement("canvas"); c2.width = Math.round(r.width); c2.height = Math.round(r.height);
-      c2.getContext("2d").drawImage(canvas, 0, 0, c2.width, c2.height); onChange(c2.toDataURL("image/png"));
+      c2.getContext("2d").drawImage(canvas, 0, 0, c2.width, c2.height); onChange(c2.toDataURL("image/png")); has = true;
     }
     down = false;
   };
-  return { clear() { blank(); inked = false; onChange(""); } };
+  return { clear() { blank(); inked = false; has = false; onChange(""); show(); } };
 }
 
 async function checkForm(key) {

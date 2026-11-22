@@ -189,6 +189,13 @@ label.check.urgent { color: var(--danger); font-size: 14px; }
 .stack { display: grid; gap: 8px; }
 .prow { display: grid; grid-template-columns: 1fr 10.5em 46px; gap: 6px; margin-top: 6px; align-items: center; }
 .prow .btn { min-height: 44px; padding: 0; }
+.sigwrap { position: relative; }
+.sigwrap.open canvas.sig { border: 2px solid var(--green, #2f6b3a); }
+.sigcover { position: absolute; left: 0; right: 0; top: 6px; height: 150px; border: 0; border-radius: 10px; background: rgba(240, 242, 238, .82);
+  color: #333; font: inherit; font-weight: 700; display: flex; align-items: center; justify-content: center; cursor: pointer; touch-action: auto; }
+.sigcover.signed { background: rgba(255, 255, 255, .08); align-items: flex-end; padding-bottom: 8px; font-weight: 600; font-size: 13px; color: #555; }
+.sigcover[hidden], .sigdone[hidden] { display: none; }
+.sigdone { margin: 0 0 6px; }
 canvas.sig { display: block; width: 100%; height: 150px; border: 1px solid var(--line); border-radius: 10px; background: #fff; touch-action: none; margin: 6px 0; }
 .dnote { margin-top: 6px; }
 .ans { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid #e3e8e1; font-size: 14px; }
