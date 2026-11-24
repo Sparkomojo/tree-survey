@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.75";
+const APP_VERSION = "1.76";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -1811,6 +1811,27 @@ const PC_FIELDS = {
   "rpa incursion": pcField("rpa"), "aia notes": pcField("aiaNotes"), "qtra hazard": pcField("qtraHazard"), "qtra target description": pcField("qtraTarget"),
 };
 PC_FIELDS["plan color"] = PC_FIELDS["plan colour"];
+// a tree moved on the PC: "lat lon", with the grid reference and (for a hedge, line or outline) its end and points in the change itself
+const pcLatLon = v => { const m = String(v ?? "").match(/-?\d+(?:\.\d+)?/g); return m && m.length >= 2 ? [+m[0], +m[1]] : null; };
+PC_FIELDS["position"] = {
+  get: t => t.lat != null && t.lat !== "" ? `${+t.lat} ${+t.lon}` : "",
+  same: (a, b) => { const x = pcLatLon(a), y = pcLatLon(b); if (!x || !y) return !x && !y; return Math.abs(x[0] - y[0]) < 3e-6 && Math.abs(x[1] - y[1]) < 5e-6; },  // about 30 cm
+  set: (t, v, a) => {
+    const p = pcLatLon(v); if (!p) return;
+    const dLat = p[0] - (+t.lat || p[0]), dLon = p[1] - (+t.lon || p[1]);
+    t.lat = p[0]; t.lon = p[1];
+    t.grid = (a && a.ref) || OSGB.fromLatLon(t.lat, t.lon).ref; t.gridManual = ""; t.w3w = "";
+    t.posSource = "pc"; t.posNote = "Moved on the PC"; delete t.offset;
+    const pts = a && Array.isArray(a.points) && a.points.length >= 2 ? a.points : null;
+    if (t.end && t.end.lat != null) {
+      if (pts) { const e = a && Array.isArray(a.end) ? a.end : pts[pts.length - 1]; t.end = Object.assign({}, t.end, { lat: e[0], lon: e[1] }); t.via = pts.slice(1, -1).map(q => ({ lat: q[0], lon: q[1] })); }
+      else {
+        t.end = a && Array.isArray(a.end) ? Object.assign({}, t.end, { lat: a.end[0], lon: a.end[1] }) : Object.assign({}, t.end, { lat: +t.end.lat + dLat, lon: +t.end.lon + dLon });
+        if ((t.via || []).length) t.via = t.via.map(q => Object.assign({}, q, { lat: +q.lat + dLat, lon: +q.lon + dLon }));
+      }
+    }
+  },
+};
 // the same value written two ways counts as the same: spaces, "12" and "12.0", an estimated "#"
 const pcSame = (a, b) => { const f = v => { const x = String(v ?? "").replace(/\s+/g, " ").trim().replace(/#$/, ""); return x !== "" && !isNaN(+x) ? String(+x) : x.toLowerCase(); }; return f(a) === f(b); };
 const pcTime = v => { const m = /^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)/.exec(v || ""); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], 59).getTime() : 0; };
@@ -1835,8 +1856,8 @@ function planPcChanges(amendments, trees, job) {
     const val = String(a.new ?? "");
     const same = f.same || pcSame;
     if (same(cur, val)) { out.same.push(label); continue; }
-    if (same(cur, a.old)) { f.set(t, val); out.trees.set(t.id, t); out.applied.push(label); continue; }
-    if (pcTime(a.at) > (t0.updated || 0)) { f.set(t, val); out.trees.set(t.id, t); out.pcWon.push(label); }
+    if (same(cur, a.old)) { f.set(t, val, a); out.trees.set(t.id, t); out.applied.push(label); continue; }
+    if (pcTime(a.at) > (t0.updated || 0)) { f.set(t, val, a); out.trees.set(t.id, t); out.pcWon.push(label); }
     else out.tabletWon.push(label);
   }
   return out;
@@ -1852,6 +1873,7 @@ async function applyPcChanges(d) {
   const trees = await DB.by("trees", "job", job.id);
   const plan = planPcChanges(d.amendments, trees, job);
   const n = plan.applied.length + plan.pcWon.length;
+  const moves = plan.applied.concat(plan.pcWon).filter(x => / Position$/.test(x)).length;
   const list = a => a.slice(0, 12).join(", ") + (a.length > 12 ? "…" : "");
   const notes = []
     .concat(plan.pcWon.length ? [`⚠ Changed here as well, the PC's change is later and will be used – check: ${list(plan.pcWon)}`] : [])
@@ -1859,7 +1881,7 @@ async function applyPcChanges(d) {
     .concat(plan.missing.length ? [`Not on this device (no such tag): ${list(plan.missing)}`] : [])
     .concat(plan.cant.length ? [`Can't be changed from the PC – change these here: ${list(plan.cant)}`] : []);
   if (!n) { alert(`"${job.site}": nothing to change – ${plan.same.length ? "this device already has the PC's changes" : "none of the PC's changes could be used"}.` + (notes.length ? "\n\n" + notes.join("\n\n") : "")); return; }
-  if (!confirm(`Changes made on the PC for "${job.site}"${d.made ? " (" + d.made + ")" : ""}:\n\n${n} box${n === 1 ? "" : "es"} on ${plan.trees.size} tree${plan.trees.size === 1 ? "" : "s"} will be updated${plan.same.length ? `; ${plan.same.length} already the same` : ""}.\n\nTrees, photos and positions here are kept.` + (notes.length ? "\n\n" + notes.join("\n\n") : "") + "\n\nOK – update the survey.")) return;
+  if (!confirm(`Changes made on the PC for "${job.site}"${d.made ? " (" + d.made + ")" : ""}:\n\n${n} box${n === 1 ? "" : "es"} on ${plan.trees.size} tree${plan.trees.size === 1 ? "" : "s"} will be updated${plan.same.length ? `; ${plan.same.length} already the same` : ""}.\n\nTrees and photos here are kept.${moves ? ` ${moves} tree${moves === 1 ? "" : "s"} will be moved to the position set on the PC.` : " Positions are not changed."}` + (notes.length ? "\n\n" + notes.join("\n\n") : "") + "\n\nOK – update the survey.")) return;
   const now = Date.now();
   for (const t of plan.trees.values()) { t.updated = now; t.pcChanged = now; await DB.put("trees", t); }
   job.updated = now; await DB.put("jobs", job);
