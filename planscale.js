@@ -254,16 +254,32 @@ async function dropLayerTiles(lay) {
 // every sharper layer of a job, when the job itself goes (deleted, or replaced by a copy from a zip)
 async function dropJobTiles(job) { for (const l of (job && job.layers) || []) await dropLayerTiles(l); }
 
+// A picture that was cut to a shape (an area of interest) carries its outline as fractions of its own box (v1.79):
+// [[across, down], …]. Each picture on the map is trimmed to it, so the street map shows round the edge, not white.
+function clipFor(lay, b) {
+  if (!Array.isArray(lay.clip) || lay.clip.length < 3 || !lay.bounds) return "";
+  const [[S, W], [N, E]] = lay.bounds, [[s, w], [n, e]] = b;
+  return "polygon(" + lay.clip.map(([fx, fy]) => {
+    const lon = W + fx * (E - W), lat = N - fy * (N - S);
+    return ((lon - w) / (e - w) * 100).toFixed(3) + "% " + ((n - lat) / (n - s) * 100).toFixed(3) + "%";
+  }).join(", ") + ")";
+}
+function trimmed(overlay, lay, b) {
+  const cp = clipFor(lay, b);
+  if (cp) overlay.on("add", () => { const el = overlay.getElement(); if (el) { el.style.clipPath = cp; el.style.webkitClipPath = cp; } });
+  return overlay;
+}
+
 function drawLayers(map, job, overlays) {
   // aerial photos / drone maps first, so shapes and trees sit on top
   (job.layers || []).filter(l => l.kind === "image").forEach(lay => {
     const opt = { opacity: layerStrength(lay), attribution: esc(lay.credit || ""), interactive: false };
     if (lay.sharp) {      // its pieces are read from the device and added as they arrive
       const g = L.layerGroup(); g.addTo(map); overlays[esc(lay.name)] = g;
-      layerTiles(lay).then(ts => ts.forEach(t => L.imageOverlay(t.url, t.bounds, opt).addTo(g))).catch(() => { });
+      layerTiles(lay).then(ts => ts.forEach(t => trimmed(L.imageOverlay(t.url, t.bounds, opt), lay, t.bounds).addTo(g))).catch(() => { });
       return;
     }
-    const im = L.imageOverlay(lay.image, lay.bounds, opt);
+    const im = trimmed(L.imageOverlay(lay.image, lay.bounds, opt), lay, lay.bounds);
     im.addTo(map); overlays[esc(lay.name)] = im;
   });
   (job.layers || []).filter(l => l.kind !== "image").forEach((lay, i) => {
@@ -288,6 +304,7 @@ async function addLayerFile(job, file) {
   if (gj.type === "ImageOverlay") {  // aerial photo / drone map made on the PC by "Aerial image → phone"
     if (!gj.image || !gj.bounds) throw new Error("That image layer is incomplete – make it again on the PC.");
     const lay = { id: uid(), kind: "image", name: gj.name || file.name.replace(/\.json$/i, ""), bounds: gj.bounds, credit: gj.credit || "", zones: false };
+    if (Array.isArray(gj.clip) && gj.clip.length >= 3 && gj.clip.every(p => Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1]))) lay.clip = gj.clip;
     const pieces = Array.isArray(gj.tiles) ? gj.tiles.filter(t => t && t.image && Array.isArray(t.bounds)) : [];
     if (pieces.length) {          // the sharper version: keep its pieces beside the job, not in it
       await DB.put("settings", { id: tilesKey(lay.id), tiles: pieces.map(t => ({ bounds: t.bounds, blob: dataUrlBlob(t.image) })) });
