@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.77";
+const APP_VERSION = "1.78";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -501,6 +501,7 @@ async function deleteJob(id) {
   for (const t of await DB.by("trees", "job", id)) await DB.del("trees", t.id);
   for (const p of await DB.by("photos", "job", id)) await DB.del("photos", p.id);
   for (const f of await DB.by("features", "job", id)) await DB.del("features", f.id);
+  if (typeof dropJobTiles === "function") await dropJobTiles(await DB.get("jobs", id));    // the pieces of a sharper aerial image
   await DB.del("jobs", id);
   location.replace("#/");
 }
@@ -1775,6 +1776,7 @@ async function importZip(file) {
     for (const f of d.features || []) await DB.put("features", f);
     const zp = await zipPlans();
     d.job.plans = zp.list; usePlan(d.job, zp.active);
+    if (existing && typeof dropJobTiles === "function") await dropJobTiles(existing);   // its aerial layers go with the copy being replaced
     await DB.put("jobs", d.job);
     for (const t of d.trees) await DB.put("trees", t);
     for (const p of d.photos) {

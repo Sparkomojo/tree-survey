@@ -229,10 +229,41 @@ function zoneFor(job, lat, lon) {
 // how strongly a layer is drawn: 1 = as made, down to 0.2 = faint (set per layer on the Map layers page)
 function layerStrength(lay) { const o = +lay.opacity; return o >= 0.2 && o <= 1 ? o : 1; }
 
+// A sharper aerial image comes as several pieces (v1.78). The pieces are kept out of the job record – in the settings
+// store under "layertiles:<layer id>" – so saving a tree does not rewrite megabytes of picture each time.
+const TILE_URLS = {};   // layer id -> [{bounds, url}]: one set of addresses per visit, however often the map is drawn
+const tilesKey = id => "layertiles:" + id;
+function dataUrlBlob(u) {
+  const i = u.indexOf(","), bin = atob(u.slice(i + 1)), a = new Uint8Array(bin.length);
+  for (let k = 0; k < bin.length; k++) a[k] = bin.charCodeAt(k);
+  return new Blob([a], { type: (u.slice(0, i).match(/^data:([^;,]+)/) || [])[1] || "image/jpeg" });
+}
+async function layerTiles(lay) {
+  if (!TILE_URLS[lay.id]) {
+    const rec = await DB.get("settings", tilesKey(lay.id));
+    TILE_URLS[lay.id] = ((rec && rec.tiles) || []).map(t => ({ bounds: t.bounds, url: URL.createObjectURL(t.blob) }));
+  }
+  return TILE_URLS[lay.id];
+}
+async function dropLayerTiles(lay) {
+  if (!lay || !lay.sharp) return;
+  (TILE_URLS[lay.id] || []).forEach(t => { try { URL.revokeObjectURL(t.url); } catch (e) { } });
+  delete TILE_URLS[lay.id];
+  try { await DB.del("settings", tilesKey(lay.id)); } catch (e) { }
+}
+// every sharper layer of a job, when the job itself goes (deleted, or replaced by a copy from a zip)
+async function dropJobTiles(job) { for (const l of (job && job.layers) || []) await dropLayerTiles(l); }
+
 function drawLayers(map, job, overlays) {
   // aerial photos / drone maps first, so shapes and trees sit on top
   (job.layers || []).filter(l => l.kind === "image").forEach(lay => {
-    const im = L.imageOverlay(lay.image, lay.bounds, { opacity: layerStrength(lay), attribution: esc(lay.credit || ""), interactive: false });
+    const opt = { opacity: layerStrength(lay), attribution: esc(lay.credit || ""), interactive: false };
+    if (lay.sharp) {      // its pieces are read from the device and added as they arrive
+      const g = L.layerGroup(); g.addTo(map); overlays[esc(lay.name)] = g;
+      layerTiles(lay).then(ts => ts.forEach(t => L.imageOverlay(t.url, t.bounds, opt).addTo(g))).catch(() => { });
+      return;
+    }
+    const im = L.imageOverlay(lay.image, lay.bounds, opt);
     im.addTo(map); overlays[esc(lay.name)] = im;
   });
   (job.layers || []).filter(l => l.kind !== "image").forEach((lay, i) => {
@@ -256,10 +287,15 @@ async function addLayerFile(job, file) {
   let gj = /\.kml$/i.test(file.name) || /<kml/i.test(text.slice(0, 500)) ? kmlToGeoJSON(text) : JSON.parse(text);
   if (gj.type === "ImageOverlay") {  // aerial photo / drone map made on the PC by "Aerial image → phone"
     if (!gj.image || !gj.bounds) throw new Error("That image layer is incomplete – make it again on the PC.");
-    job.layers = (job.layers || []).concat([{ id: uid(), kind: "image", name: gj.name || file.name.replace(/\.json$/i, ""),
-      image: gj.image, bounds: gj.bounds, credit: gj.credit || "", zones: false }]);
+    const lay = { id: uid(), kind: "image", name: gj.name || file.name.replace(/\.json$/i, ""), bounds: gj.bounds, credit: gj.credit || "", zones: false };
+    const pieces = Array.isArray(gj.tiles) ? gj.tiles.filter(t => t && t.image && Array.isArray(t.bounds)) : [];
+    if (pieces.length) {          // the sharper version: keep its pieces beside the job, not in it
+      await DB.put("settings", { id: tilesKey(lay.id), tiles: pieces.map(t => ({ bounds: t.bounds, blob: dataUrlBlob(t.image) })) });
+      lay.sharp = true; lay.pieces = pieces.length;
+    } else lay.image = gj.image;
+    job.layers = (job.layers || []).concat([lay]);
     job.updated = Date.now(); await DB.put("jobs", job);
-    return "aerial image";
+    return lay.sharp ? "sharper aerial image" : "aerial image";
   }
   if (gj.type === "Feature") gj = { type: "FeatureCollection", features: [gj] };
   gj = toWGS84(gj);
@@ -278,7 +314,7 @@ async function layersPage(jobId) {
   app.innerHTML = `<header class="top"><button aria-label="Back" onclick="location.replace('#/job/${jobId}/map')">‹</button><h1>Map layers<span class="sub">${esc(job.site)}</span></h1></header>
   <main>
     <p class="hint">Add survey zones, site boundaries, routes or target points as <b>GeoJSON</b> or <b>KML</b> (Google Earth), or an aerial photo / drone map made on the PC with <b>Aerial image → phone</b>. Each layer has a slider for how strongly it shows on the map. Shapefiles: convert them on the PC with <b>Map layers</b> (Import survey folder) or in QGIS. Trees take the name of the zone they stand in.</p>
-    ${ls.map(l => `<div class="card"><div class="name">${esc(l.name)}</div><div class="meta">${l.kind === "image" ? "Aerial image" : (l.geojson.features || []).length + " shapes"}${l.credit ? " · " + esc(l.credit) : ""}</div>
+    ${ls.map(l => `<div class="card"><div class="name">${esc(l.name)}</div><div class="meta">${l.kind === "image" ? "Aerial image" + (l.sharp ? ` – sharper, in ${l.pieces || "several"} pieces` : "") : (l.geojson.features || []).length + " shapes"}${l.credit ? " · " + esc(l.credit) : ""}</div>
       ${l.kind === "image" ? "" : `<label class="check"><input type="checkbox" data-z="${l.id}" ${l.zones !== false ? "checked" : ""}> Use its areas as zones for trees</label>`}
       <label for="lo_${l.id}">Show on the map at <b data-pc="${l.id}">${Math.round(layerStrength(l) * 100)}%</b></label><input id="lo_${l.id}" data-op="${l.id}" type="range" min="0.2" max="1" step="0.05" value="${layerStrength(l)}" style="display:block;width:100%;margin:4px 0 10px">
       <button class="btn small danger" data-del="${l.id}">Remove</button></div>`).join("") || `<div class="empty">No layers yet.</div>`}
@@ -287,9 +323,9 @@ async function layersPage(jobId) {
     <input type="file" id="layin" accept=".geojson,.json,.kml,application/json,application/vnd.google-earth.kml+xml" hidden>
   </main>`;
   $("#add").onclick = () => { const i = $("#layin"); i.value = ""; i.onchange = async () => {
-    try { const n = await addLayerFile(job, i.files[0]); toast(typeof n === "number" ? `${n} shapes added` : "Aerial image added"); await rezone(job); route(); }
+    try { const n = await addLayerFile(job, i.files[0]); toast(typeof n === "number" ? `${n} shapes added` : n === "sharper aerial image" ? "Sharper aerial image added" : "Aerial image added"); await rezone(job); route(); }
     catch (e) { toast("Couldn't read that file: " + e.message, 5000); } }; i.click(); };
-  app.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => { job.layers = ls.filter(l => l.id !== b.dataset.del); await DB.put("jobs", job); await rezone(job); route(); });
+  app.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => { await dropLayerTiles(ls.find(l => l.id === b.dataset.del)); job.layers = ls.filter(l => l.id !== b.dataset.del); await DB.put("jobs", job); await rezone(job); route(); });
   app.querySelectorAll("[data-z]").forEach(b => b.onchange = async () => { ls.find(l => l.id === b.dataset.z).zones = b.checked; await DB.put("jobs", job); });
   app.querySelectorAll("[data-op]").forEach(b => {
     b.oninput = () => { const pc = app.querySelector(`[data-pc="${b.dataset.op}"]`); if (pc) pc.textContent = Math.round(+b.value * 100) + "%"; };
