@@ -270,13 +270,49 @@ function trimmed(overlay, lay, b) {
   return overlay;
 }
 
+// An aerial picture file made on the PC (Aerial image → phone) -> the layer record for a job. A sharper one has its
+// pieces put beside the job. id: given by a starter zip (so loading the starter again replaces the layer), else new.
+async function imageLayer(gj, fallbackName, id) {
+  if (!gj || gj.type !== "ImageOverlay" || !gj.image || !gj.bounds) throw new Error("That image layer is incomplete – make it again on the PC.");
+  const lay = { id: id || uid(), kind: "image", name: gj.name || fallbackName || "Aerial image", bounds: gj.bounds, credit: gj.credit || "", zones: false };
+  if (Array.isArray(gj.clip) && gj.clip.length >= 3 && gj.clip.every(p => Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1]))) lay.clip = gj.clip;
+  const pieces = Array.isArray(gj.tiles) ? gj.tiles.filter(t => t && t.image && Array.isArray(t.bounds)) : [];
+  if (pieces.length) {          // the sharper version: keep its pieces beside the job, not in it
+    (TILE_URLS[lay.id] || []).forEach(t => { try { URL.revokeObjectURL(t.url); } catch (e) { } }); delete TILE_URLS[lay.id];
+    await DB.put("settings", { id: tilesKey(lay.id), tiles: pieces.map(t => ({ bounds: t.bounds, blob: dataUrlBlob(t.image) })) });
+    lay.sharp = true; lay.pieces = pieces.length;
+  } else lay.image = gj.image;
+  return lay;
+}
+// A starter zip from the PC carries the job's map layers. Its own layers have ids like l-0123abcdef; anything added on
+// this device has a different kind of id and is never touched here.
+const STARTER_LAYER = /^l-[0-9a-f]{10}$/;
+// the aerial layers a starter carries (job.imageLayers: [{id, file}]) -> layer records, pieces stored
+async function starterImageLayers(zip, job) {
+  const out = [];
+  for (const it of job.imageLayers || []) {
+    const f = it && it.file && zip.file(it.file);
+    if (!f) continue;
+    try { out.push(await imageLayer(JSON.parse(await f.async("string")), String(it.file).replace(/^.*\//, "").replace(/\.json$/i, ""), it.id)); }
+    catch (e) { console.error(e); }
+  }
+  return out;
+}
+
 function drawLayers(map, job, overlays) {
   // aerial photos / drone maps first, so shapes and trees sit on top
   (job.layers || []).filter(l => l.kind === "image").forEach(lay => {
     const opt = { opacity: layerStrength(lay), attribution: esc(lay.credit || ""), interactive: false };
     if (lay.sharp) {      // its pieces are read from the device and added as they arrive
       const g = L.layerGroup(); g.addTo(map); overlays[esc(lay.name)] = g;
-      layerTiles(lay).then(ts => ts.forEach(t => trimmed(L.imageOverlay(t.url, t.bounds, opt), lay, t.bounds).addTo(g))).catch(() => { });
+      // The layer list gives every picture its place in the pile (plans, then aerial pictures, in order). It does that
+      // before the pieces are here, so the place is kept and given to each piece as it arrives – without it the pieces
+      // sat underneath any plan and any other aerial picture.
+      g.setZIndex = function (z) { this._place = z; return L.LayerGroup.prototype.setZIndex.call(this, z); };
+      layerTiles(lay).then(ts => ts.forEach(t => {
+        const o = trimmed(L.imageOverlay(t.url, t.bounds, opt), lay, t.bounds).addTo(g);
+        if (g._place != null) o.setZIndex(g._place);
+      })).catch(() => { });
       return;
     }
     const im = trimmed(L.imageOverlay(lay.image, lay.bounds, opt), lay, lay.bounds);
@@ -302,14 +338,7 @@ async function addLayerFile(job, file) {
   const text = await file.text();
   let gj = /\.kml$/i.test(file.name) || /<kml/i.test(text.slice(0, 500)) ? kmlToGeoJSON(text) : JSON.parse(text);
   if (gj.type === "ImageOverlay") {  // aerial photo / drone map made on the PC by "Aerial image → phone"
-    if (!gj.image || !gj.bounds) throw new Error("That image layer is incomplete – make it again on the PC.");
-    const lay = { id: uid(), kind: "image", name: gj.name || file.name.replace(/\.json$/i, ""), bounds: gj.bounds, credit: gj.credit || "", zones: false };
-    if (Array.isArray(gj.clip) && gj.clip.length >= 3 && gj.clip.every(p => Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1]))) lay.clip = gj.clip;
-    const pieces = Array.isArray(gj.tiles) ? gj.tiles.filter(t => t && t.image && Array.isArray(t.bounds)) : [];
-    if (pieces.length) {          // the sharper version: keep its pieces beside the job, not in it
-      await DB.put("settings", { id: tilesKey(lay.id), tiles: pieces.map(t => ({ bounds: t.bounds, blob: dataUrlBlob(t.image) })) });
-      lay.sharp = true; lay.pieces = pieces.length;
-    } else lay.image = gj.image;
+    const lay = await imageLayer(gj, file.name.replace(/\.json$/i, ""));
     job.layers = (job.layers || []).concat([lay]);
     job.updated = Date.now(); await DB.put("jobs", job);
     return lay.sharp ? "sharper aerial image" : "aerial image";

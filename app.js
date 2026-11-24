@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.79";
+const APP_VERSION = "1.80";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -1761,6 +1761,22 @@ async function importZip(file) {
         else existing.layers.push(lay);
         nl++;
       }
+      // aerial layers in the starter: the same one again replaces what is here (its switch and strength kept)
+      for (const lay of typeof starterImageLayers === "function" ? await starterImageLayers(zip, d.job) : []) {
+        existing.layers = existing.layers || [];
+        const i = existing.layers.findIndex(q => q.id === lay.id);
+        if (i >= 0) { lay.opacity = existing.layers[i].opacity; lay.hidden = existing.layers[i].hidden; existing.layers[i] = lay; }
+        else existing.layers.push(lay);
+        nl++;
+      }
+      // a layer an earlier starter brought that this one no longer carries has been taken off the job on the PC: it goes
+      // here too. Layers added on this device are left alone.
+      if (typeof STARTER_LAYER !== "undefined" && (d.job.layers || d.job.imageLayers)) {
+        const carried = new Set([...(d.job.layers || []).map(l => l.id), ...(d.job.imageLayers || []).map(l => l.id)]);
+        const gone = (existing.layers || []).filter(l => STARTER_LAYER.test(l.id || "") && !carried.has(l.id));
+        for (const l of gone) await dropLayerTiles(l);
+        existing.layers = (existing.layers || []).filter(l => !gone.includes(l));
+      }
       existing.updated = Date.now(); await DB.put("jobs", existing);
       toast(`${zp.list.length} plan${zp.list.length === 1 ? "" : "s"}${nl ? ` and ${nl} map layer${nl === 1 ? "" : "s"}` : ""} updated for ${existing.site} – your trees are kept`, 3500); go("#/job/" + existing.id); return;
     }
@@ -1777,6 +1793,8 @@ async function importZip(file) {
     const zp = await zipPlans();
     d.job.plans = zp.list; usePlan(d.job, zp.active);
     if (existing && typeof dropJobTiles === "function") await dropJobTiles(existing);   // its aerial layers go with the copy being replaced
+    if (d.job.imageLayers && typeof starterImageLayers === "function") d.job.layers = (d.job.layers || []).concat(await starterImageLayers(zip, d.job));
+    delete d.job.imageLayers;
     await DB.put("jobs", d.job);
     for (const t of d.trees) await DB.put("trees", t);
     for (const p of d.photos) {
