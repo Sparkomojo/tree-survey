@@ -226,20 +226,24 @@ function zoneFor(job, lat, lon) {
   return "";
 }
 
+// how strongly a layer is drawn: 1 = as made, down to 0.2 = faint (set per layer on the Map layers page)
+function layerStrength(lay) { const o = +lay.opacity; return o >= 0.2 && o <= 1 ? o : 1; }
+
 function drawLayers(map, job, overlays) {
   // aerial photos / drone maps first, so shapes and trees sit on top
   (job.layers || []).filter(l => l.kind === "image").forEach(lay => {
-    const im = L.imageOverlay(lay.image, lay.bounds, { opacity: 1, attribution: esc(lay.credit || ""), interactive: false });
+    const im = L.imageOverlay(lay.image, lay.bounds, { opacity: layerStrength(lay), attribution: esc(lay.credit || ""), interactive: false });
     im.addTo(map); overlays[esc(lay.name)] = im;
   });
   (job.layers || []).filter(l => l.kind !== "image").forEach((lay, i) => {
     const ntm = /National Tree Map/.test(lay.credit || "");
     const col = ntm ? "#4E8A4A" : LAYER_COLS[i % LAYER_COLS.length];
+    const k = layerStrength(lay);
     const g = L.geoJSON(lay.geojson, {
       attribution: esc(lay.credit || ""),
       style: f => { const own = f && f.properties && /^#[0-9a-f]{6}$/i.test(f.properties.colour || "") ? f.properties.colour : "";   // usage zones carry their band's colour
-        return ntm ? ({ color: col, weight: 1, fillColor: "#8FB98B", fillOpacity: 0.25 }) : own ? ({ color: own, weight: 2, fillColor: own, fillOpacity: 0.28 }) : ({ color: col, weight: 2, fillOpacity: 0.08 }); },
-      pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: "#fff", weight: 1.5, fillColor: col, fillOpacity: 1 }),
+        return ntm ? ({ color: col, weight: 1, opacity: k, fillColor: "#8FB98B", fillOpacity: 0.25 * k }) : own ? ({ color: own, weight: 2, opacity: k, fillColor: own, fillOpacity: 0.28 * k }) : ({ color: col, weight: 2, opacity: k, fillOpacity: 0.08 * k }); },
+      pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: "#fff", weight: 1.5, opacity: k, fillColor: col, fillOpacity: k }),
       onEachFeature: (f, l) => { const n = featName(f.properties); if (n) l.bindTooltip(esc(n), { sticky: true, className: "tlabel" }); },
       interactive: true,
     });
@@ -273,9 +277,10 @@ async function layersPage(jobId) {
   const ls = job.layers || [];
   app.innerHTML = `<header class="top"><button aria-label="Back" onclick="location.replace('#/job/${jobId}/map')">‹</button><h1>Map layers<span class="sub">${esc(job.site)}</span></h1></header>
   <main>
-    <p class="hint">Add survey zones, site boundaries, routes or target points as <b>GeoJSON</b> or <b>KML</b> (Google Earth), or an aerial photo / drone map made on the PC with <b>Aerial image → phone</b>. Shapefiles: convert them on the PC with <b>Map layers</b> (Import survey folder) or in QGIS. Trees take the name of the zone they stand in.</p>
+    <p class="hint">Add survey zones, site boundaries, routes or target points as <b>GeoJSON</b> or <b>KML</b> (Google Earth), or an aerial photo / drone map made on the PC with <b>Aerial image → phone</b>. Each layer has a slider for how strongly it shows on the map. Shapefiles: convert them on the PC with <b>Map layers</b> (Import survey folder) or in QGIS. Trees take the name of the zone they stand in.</p>
     ${ls.map(l => `<div class="card"><div class="name">${esc(l.name)}</div><div class="meta">${l.kind === "image" ? "Aerial image" : (l.geojson.features || []).length + " shapes"}${l.credit ? " · " + esc(l.credit) : ""}</div>
       ${l.kind === "image" ? "" : `<label class="check"><input type="checkbox" data-z="${l.id}" ${l.zones !== false ? "checked" : ""}> Use its areas as zones for trees</label>`}
+      <label for="lo_${l.id}">Show on the map at <b data-pc="${l.id}">${Math.round(layerStrength(l) * 100)}%</b></label><input id="lo_${l.id}" data-op="${l.id}" type="range" min="0.2" max="1" step="0.05" value="${layerStrength(l)}" style="display:block;width:100%;margin:4px 0 10px">
       <button class="btn small danger" data-del="${l.id}">Remove</button></div>`).join("") || `<div class="empty">No layers yet.</div>`}
     <button class="btn primary block" id="add">＋ Add a layer file</button>
     <button class="btn block" id="rezone" ${ls.length ? "" : "hidden"} style="margin-top:8px">Update every tree's zone</button>
@@ -286,6 +291,10 @@ async function layersPage(jobId) {
     catch (e) { toast("Couldn't read that file: " + e.message, 5000); } }; i.click(); };
   app.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => { job.layers = ls.filter(l => l.id !== b.dataset.del); await DB.put("jobs", job); await rezone(job); route(); });
   app.querySelectorAll("[data-z]").forEach(b => b.onchange = async () => { ls.find(l => l.id === b.dataset.z).zones = b.checked; await DB.put("jobs", job); });
+  app.querySelectorAll("[data-op]").forEach(b => {
+    b.oninput = () => { const pc = app.querySelector(`[data-pc="${b.dataset.op}"]`); if (pc) pc.textContent = Math.round(+b.value * 100) + "%"; };
+    b.onchange = async () => { ls.find(l => l.id === b.dataset.op).opacity = +b.value; await DB.put("jobs", job); };
+  });
   $("#rezone").onclick = async () => { const n = await rezone(job); toast(`${n} trees given a zone`); };
 }
 

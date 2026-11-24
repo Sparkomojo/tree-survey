@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.76";
+const APP_VERSION = "1.77";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -1756,7 +1756,7 @@ async function importZip(file) {
       for (const lay of d.job.layers || []) {  // map layers in the starter: same name = replace (keeps its switches), otherwise add
         existing.layers = existing.layers || [];
         const i = existing.layers.findIndex(q => (q.name || "") === (lay.name || "") || q.id === lay.id);
-        if (i >= 0) existing.layers[i] = Object.assign({}, lay, { id: existing.layers[i].id, zones: existing.layers[i].zones, hidden: existing.layers[i].hidden });
+        if (i >= 0) existing.layers[i] = Object.assign({}, lay, { id: existing.layers[i].id, zones: existing.layers[i].zones, hidden: existing.layers[i].hidden, opacity: existing.layers[i].opacity });
         else existing.layers.push(lay);
         nl++;
       }
