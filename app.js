@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.80";
+const APP_VERSION = "1.81";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -1752,7 +1752,14 @@ async function importZip(file) {
         if (i >= 0) { idMap[pl.id] = existing.plans[i].id; pl.id = existing.plans[i].id; existing.plans[i] = pl; }
         else { idMap[pl.id] = pl.id; existing.plans.push(pl); }
       }
-      usePlan(existing, (zp.active && idMap[zp.active]) || existing.planId);
+      // a plan an earlier starter brought that this one no longer carries has been taken off the job on the PC: it goes
+      // here too. The PC's plans have ids like p-0123abcdef; a plan loaded on this device has another kind and stays.
+      if (zp.list.length) {
+        const carried = new Set(Object.values(idMap));
+        existing.plans = existing.plans.filter(q => !(/^p-[0-9a-f]{10}$/.test(q.id || "") && !carried.has(q.id)));
+      }
+      const want = (zp.active && idMap[zp.active]) || existing.planId;
+      usePlan(existing, existing.plans.some(q => q.id === want) ? want : (existing.plans[0] || {}).id || null);
       let nl = 0;
       for (const lay of d.job.layers || []) {  // map layers in the starter: same name = replace (keeps its switches), otherwise add
         existing.layers = existing.layers || [];
