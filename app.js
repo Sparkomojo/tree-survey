@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.81";
+const APP_VERSION = "1.82";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -593,6 +593,10 @@ function L_dist(a, b) {
 }
 
 // ------------------------------------------------------------------ GPS
+// GPS accuracy as it is kept and shown: whole metres from a phone's own GPS, tenths under 2 m and hundredths under
+// 10 cm, so a sub-metre or RTK receiver doesn't read "±0 m"
+const accKeep = a => a < 1 ? Math.round(a * 100) / 100 : Math.round(a * 10) / 10;
+const accTxt = a => { a = +a || 0; return a > 0 && a < 0.1 ? a.toFixed(2) : a > 0 && a < 2 ? a.toFixed(1) : String(Math.round(a)); };
 let gpsWatch = null, gpsTimer = null;
 function stopGps() { if (gpsWatch !== null) navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; clearTimeout(gpsTimer); }
 function startGps(onFix, onState) {
@@ -776,14 +780,14 @@ async function treePage(jobId, treeId) {
 
     <h2>Location</h2>
     <div class="card gps"><span class="dot" id="gdot"></span>
-      <div class="status"><div class="big" id="gref">${t.grid ? esc(t.grid) : "No location yet"}</div><div class="meta" id="gstat">${t.lat ? (t.posSource && t.posSource !== "gps" ? esc(t.posNote || "Placed on map") : `±${Math.round(t.acc || 0)} m GPS`) + ` · ${(+t.lat).toFixed(6)}, ${(+t.lon).toFixed(6)}` : "Stand by the tree and tap Get location"}</div></div>
+      <div class="status"><div class="big" id="gref">${t.grid ? esc(t.grid) : "No location yet"}</div><div class="meta" id="gstat">${t.lat ? (t.posSource && t.posSource !== "gps" ? esc(t.posNote || "Placed on map") : `±${accTxt(t.acc)} m GPS`) + ` · ${(+t.lat).toFixed(6)}, ${(+t.lon).toFixed(6)}` : "Stand by the tree and tap Get location"}</div></div>
       <button class="btn small" id="gbtn">${t.lat ? "Update" : "Get location"}</button></div>
     <div class="hint" id="zoneOut">${t.zone ? "Zone: " + esc(t.zone) : ""}</div>
     <div class="row" style="margin-top:8px"><button class="btn small" id="onMap">🗺 Place on map</button><button class="btn small" id="measure">📏 Measure from 2 points</button></div>
     <details class="more" id="laserBox" ${t.posSource === "laser" ? "open" : ""}><summary>🎯 Laser offset – from where you stand</summary>
       <div class="hint">For a tree you can't stand beside, or where GPS is poor under the canopy: stand in the open, get a GPS fix here, aim at the stem and fire. The tree goes at that horizontal distance along the bearing. A rangefinder with a compass (TruPulse 360i) fills both boxes; otherwise type them in (bearing from a hand compass).</div>
       <div class="card"><div class="status"><div class="big" id="stRef">${t.offset ? esc(OSGB.fromLatLon(+t.offset.from.lat, +t.offset.from.lon).ref) : "No standpoint yet"}</div>
-        <div class="meta" id="stMeta">${t.offset ? `standpoint ±${Math.round(t.offset.from.acc || 0)} m` : "Stand in the open with a clear view of the tree"}</div></div>
+        <div class="meta" id="stMeta">${t.offset ? `standpoint ±${accTxt(t.offset.from.acc)} m` : "Stand in the open with a clear view of the tree"}</div></div>
         <button class="btn small" id="stGps">📍 GPS here</button></div>
       <div class="grid2"><div><label for="o_hd">Horizontal distance (m)</label><input id="o_hd" inputmode="decimal" value="${t.offset ? t.offset.hd : ""}"></div>
         <div><label for="o_az">Bearing to the tree (°)</label><input id="o_az" inputmode="decimal" value="${t.offset ? t.offset.az : ""}"></div></div>
@@ -1216,13 +1220,13 @@ async function treePage(jobId, treeId) {
 
   // --- GPS
   const setFix = c => {
-    t.lat = +c.latitude.toFixed(7); t.lon = +c.longitude.toFixed(7); t.acc = Math.round(c.accuracy * 10) / 10;
+    t.lat = +c.latitude.toFixed(7); t.lon = +c.longitude.toFixed(7); t.acc = accKeep(c.accuracy);
     t.posSource = "gps"; t.posNote = "";
     t.grid = OSGB.fromLatLon(t.lat, t.lon).ref;
     t.zone = zoneFor(job, t.lat, t.lon) || t.zone || "";
     if ($("#zoneOut")) $("#zoneOut").textContent = t.zone ? "Zone: " + t.zone : "";
     $("#gref").textContent = t.grid || `${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
-    $("#gstat").textContent = `±${Math.round(t.acc)} m · ${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
+    $("#gstat").textContent = `±${accTxt(t.acc)} m · ${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
     if (persisted || hasDetails()) touch();
   };
   const setState = (st, msg) => {
@@ -1269,7 +1273,7 @@ async function treePage(jobId, treeId) {
     e.preventDefault();
     linePoint(p => {
       stand = p; $("#stRef").textContent = OSGB.fromLatLon(p.lat, p.lon).ref;
-      $("#stMeta").textContent = `standpoint ±${Math.round(p.acc)} m`;
+      $("#stMeta").textContent = `standpoint ±${accTxt(p.acc)} m`;
     }, "standpoint");
   };
   $("#o_apply").onclick = async e => {
@@ -1280,9 +1284,9 @@ async function treePage(jobId, treeId) {
     const s = await settings(), dec = +s.declination || 0, add = $("#o_stem").checked ? stemRadius(t.dbh) : 0;
     const [lat, lon] = offsetLL(+stand.lat, +stand.lon, hd + add, az + dec);
     t.lat = +lat.toFixed(7); t.lon = +lon.toFixed(7);
-    t.acc = Math.round(((stand.acc || 5) + 0.3 + hd * 0.0175) * 10) / 10;  // + ~1° of compass error across the distance
+    t.acc = Math.round(((stand.acc != null && stand.acc !== "" ? +stand.acc : 5) + 0.3 + hd * 0.0175) * 10) / 10;  // + ~1° of compass error across the distance
     t.posSource = "laser"; t.offset = { from: stand, hd, az, dec, add: Math.round(add * 100) / 100 };
-    t.posNote = `Laser offset ${hd} m at ${az}° from a GPS standpoint (±${Math.round(stand.acc || 0)} m)`;
+    t.posNote = `Laser offset ${hd} m at ${az}° from a GPS standpoint (±${accTxt(stand.acc)} m)`;
     t.grid = OSGB.fromLatLon(t.lat, t.lon).ref; t.zone = zoneFor(job, t.lat, t.lon) || t.zone || "";
     stopGps(); $("#gref").textContent = t.grid; $("#gstat").textContent = t.posNote;
     touch(); toast("Position set from the laser offset");
@@ -1305,7 +1309,7 @@ async function treePage(jobId, treeId) {
     toast(`Getting a GPS fix for the ${label}…`);
     let best = null;
     startGps(c => { best = c; }, st => {
-      if (st === "done" && best) { cb({ lat: +best.latitude.toFixed(7), lon: +best.longitude.toFixed(7), acc: Math.round(best.accuracy * 10) / 10, src: "gps" }); lineShow(); touch(); toast(`${label[0].toUpperCase() + label.slice(1)} recorded (±${Math.round(best.accuracy)} m)`); }
+      if (st === "done" && best) { cb({ lat: +best.latitude.toFixed(7), lon: +best.longitude.toFixed(7), acc: accKeep(best.accuracy), src: "gps" }); lineShow(); touch(); toast(`${label[0].toUpperCase() + label.slice(1)} recorded (±${Math.round(best.accuracy)} m)`); }
       else if (st === "denied" || st === "error" || st === "unavailable") toast("No GPS fix – use the map instead");
     });
   };
@@ -1545,6 +1549,7 @@ async function settingsPage() {
     <button class="btn small" id="reset" style="margin-top:8px">Reset phrases to defaults</button>
     <h2>Storage</h2>
     <p class="hint">${est}. ${persisted ? "✓ Protected – the browser won't clear it to save space." : "Not yet protected from automatic clean-up. Installing the app (menu ⋮ → Install app) usually fixes this."}</p>
+    <p class="hint" id="gridBy">${OSGB.method() === "OSTN15" ? "Grid references: OSTN15, Ordnance Survey’s definitive conversion." : "Grid references: the earlier conversion (a metre or two out) – the OSTN15 data couldn’t be read on this device. Open the app once with signal. If this line stays, the browser is too old to unpack the data – update Chrome."}</p>
     <p class="hint">Tree Survey ${APP_VERSION} · © 2026 Mark Johnson. All rights reserved.</p>
   </main>
   <div class="bar"><button class="btn primary" id="save">Save</button></div>`;
@@ -1694,7 +1699,7 @@ async function buildZip(jobId) {
   }
   if ((job.safety || []).length) zip.file("Site safety check.txt", safetyText(job));
   zip.file("data.json", JSON.stringify({
-    format: "tree-survey", version: 1, app: APP_VERSION, exported: new Date().toISOString(),
+    format: "tree-survey", version: 1, app: APP_VERSION, grid: OSGB.method(), exported: new Date().toISOString(),
     job: Object.assign(strip(job), { plan: planOut, plans: plansOut, layers: (job.layers || []).filter(l => l.kind !== "image") }), trees, photos: photos.map(p => Object.assign(strip(p), { file: "Photos/" + names.get(p.id) })), surveyFile: xlsxName, features: feats,
   }, null, 1));
   const blob = await zip.generateAsync({ type: "blob", mimeType: "application/zip" });
@@ -1991,5 +1996,7 @@ window.addEventListener("DOMContentLoaded", () => {
   if ((typeof boltDetails !== "function" || typeof worksJobPage !== "function") && !sessionStorage.getItem("reloaded")) {  // part-updated files: fetch them again
     sessionStorage.setItem("reloaded", "1"); location.reload(); return;
   }
-  route();
+  // grid references by OSTN15 from the first page on: its shift grid is read first (the offline copy, so there is no
+  // wait on the network); if it can't be read the earlier conversion carries on and Settings says so
+  OSGB.load().catch(() => false).then(route);
 });  // after map.js has loaded
