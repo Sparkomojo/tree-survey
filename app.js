@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.74";
+const APP_VERSION = "1.75";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -368,7 +368,7 @@ async function homePage() {
       : "Surveys are saved on this device and work without signal. Tap <b>Export</b> on each site when you're done to send it to your PC (OneDrive, email…)."}</p>
     ${FEEDBACK ? `<button class="btn block" style="margin-top:8px" onclick="go('#/ideas')">💡 Ideas and problems – note one for the developer${ideas.length ? ` (${ideas.filter(i => !i.sent).length} to send)` : ""}</button>` : ""}
     <div class="row">
-      <button class="btn small" onclick="restoreZip()">Open a zip (works pack, survey or plans)</button>
+      <button class="btn small" onclick="restoreZip()">Open a zip (survey, plans, works pack or a file from the PC)</button>
       ${worksOnly ? `<button class="btn small" id="survtools">Survey tools</button>` : ""}
       ${installed() ? "" : `<button class="btn small" id="install" onclick="installApp()">Install app</button>`}
     </div>
@@ -1729,6 +1729,8 @@ async function importZip(file) {
     if (!dj) throw new Error("This zip wasn't made by Tree Survey (no data.json).");
     const d = JSON.parse(await dj.async("string"));
     if (d.format === "works-pack") return await importWorksPack(zip, d);
+    if (d.amend) return await applyPcChanges(d);
+    if (d.settings) return await applyPcSettings(d);
     const existing = await DB.get("jobs", d.job.id);
     const zipPlans = async () => {  // plans in the zip -> [{… blob}] (older zips carry just job.plan)
       const list = (d.job.plans && d.job.plans.length ? d.job.plans : d.job.plan ? [d.job.plan] : []), out = [];
@@ -1782,6 +1784,113 @@ async function importZip(file) {
     }
     toast(`Restored ${d.job.site}: ${d.trees.length} trees`); go("#/job/" + d.job.id);
   } catch (e) { console.error(e); toast("Couldn't restore: " + e.message, 5000); }
+}
+
+// ---- changes made on the PC, sent back to the survey here (Survey data → Send changes to the tablet…)
+// Each box the PC can change: how its export cell is read from a tree, and how a new value is put back.
+const pcNum = v => String(v ?? "").trim().replace(/#$/, "");
+const pcField = (key, num) => ({ get: t => t[key] ?? "", set: (t, v) => { t[key] = num ? pcNum(v) : v; } });
+const PC_FIELDS = {
+  "species": { get: t => speciesText(t), set: (t, v) => { t.species = v; t.speciesMore = []; } },
+  "height (m)": pcField("height", 1), "dbh (mm)": pcField("dbh", 1), "stem diameter (mm)": pcField("dbh", 1), "no. of stems": pcField("stems", 1),
+  "crown spread (m)": pcField("spread", 1), "crown radius (m)": pcField("radius", 1),
+  "crown spread n": pcField("spreadN", 1), "crown spread e": pcField("spreadE", 1), "crown spread s": pcField("spreadS", 1), "crown spread w": pcField("spreadW", 1),
+  "crown clearance (m)": pcField("clearance", 1), "first branch": pcField("firstBranch"), "life stage": pcField("lifeStage"),
+  "physiological condition": pcField("physio"), "structural condition": pcField("struct"), "comments": pcField("comments"),
+  "recommendations": { get: t => t.urgent ? ("URGENT – requires immediate attention. " + (t.recs || "")).trim() : (t.recs || ""),
+    set: (t, v) => { const m = /^URGENT\s*[–-]\s*requires immediate attention\.?\s*/i.exec(v); t.urgent = !!m; t.recs = m ? v.slice(m[0].length) : v; } },
+  "ash dieback": { get: t => adbFix(t.adb), set: (t, v) => { const m = /^(?:cat\.?\s*)?([1-4])\b/i.exec(v.trim()); t.adb = m ? ADB[+m[1]] : adbFix(v); },
+    same: (a, b) => { const c = v => { const m = /^(?:cat\.?\s*)?([1-4])\b/i.exec(String(v ?? "").trim()); return m ? m[1] : String(v ?? "").trim().toLowerCase(); }; return c(a) === c(b); } },
+  "constraints": pcField("constraints"), "bat prf": pcField("batPrf"), "valid risk": pcField("valid"), "zone": pcField("zone"),
+  "existing tag": pcField("oldTag"), "direction": pcField("direction"), "marker post": pcField("markerPost"), "landowner": pcField("landowner"),
+  "plan colour": { get: t => { const c = PLAN_COLOURS.find(x => x[1] === t.planColour); return c ? c[0] : (t.planColour || ""); },
+    set: (t, v) => { const c = PLAN_COLOURS.find(x => x[0].toLowerCase() === v.trim().toLowerCase()); t.planColour = c ? c[1] : (/^auto/i.test(v) ? "" : v); } },
+  "ownership": { get: t => (t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""),
+    set: (t, v) => { const p = v.split(/\s+[–-]\s+/); t.ownership = p[0].trim(); if (p.length > 1) t.ownershipNote = p.slice(1).join(" – "); } },
+  "tpo": pcField("tpo"), "erc (years)": pcField("erc"), "category": pcField("category"), "retain/remove": pcField("retain"),
+  "rpa incursion": pcField("rpa"), "aia notes": pcField("aiaNotes"), "qtra hazard": pcField("qtraHazard"), "qtra target description": pcField("qtraTarget"),
+};
+PC_FIELDS["plan color"] = PC_FIELDS["plan colour"];
+// the same value written two ways counts as the same: spaces, "12" and "12.0", an estimated "#"
+const pcSame = (a, b) => { const f = v => { const x = String(v ?? "").replace(/\s+/g, " ").trim().replace(/#$/, ""); return x !== "" && !isNaN(+x) ? String(+x) : x.toLowerCase(); }; return f(a) === f(b); };
+const pcTime = v => { const m = /^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)/.exec(v || ""); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], 59).getTime() : 0; };
+
+// Work out what each change does to the trees here, without saving anything.
+// A change goes in when the box here still says what it said at the import. If the box has been changed here as well,
+// whichever was changed last is kept. -> { trees: Map(id -> changed copy), applied, same, pcWon, tabletWon, missing, cant }
+function planPcChanges(amendments, trees, job) {
+  const key = s => String(s || "").toUpperCase().replace(/\s+/g, "");
+  const byTag = new Map(trees.map(t => [key(t.tag), t]));
+  const out = { trees: new Map(), applied: [], same: [], pcWon: [], tabletWon: [], missing: [], cant: [] };
+  for (const a of amendments || []) {
+    const label = `${a.tag} ${a.field}`;
+    let name = String(a.field || "").trim().toLowerCase();
+    if (/^crown (spread|radius) \(m\)$/.test(name)) name = job && job.crownMode === "radius" ? "crown radius (m)" : job && job.crownMode === "cardinal" ? "" : "crown spread (m)";
+    const f = PC_FIELDS[name];
+    const t0 = byTag.get(key(a.tag));
+    if (!t0) { out.missing.push(label); continue; }
+    if (!f) { out.cant.push(label); continue; }
+    const t = out.trees.get(t0.id) || Object.assign({}, t0);
+    const cur = f.get(t);
+    const val = String(a.new ?? "");
+    const same = f.same || pcSame;
+    if (same(cur, val)) { out.same.push(label); continue; }
+    if (same(cur, a.old)) { f.set(t, val); out.trees.set(t.id, t); out.applied.push(label); continue; }
+    if (pcTime(a.at) > (t0.updated || 0)) { f.set(t, val); out.trees.set(t.id, t); out.pcWon.push(label); }
+    else out.tabletWon.push(label);
+  }
+  return out;
+}
+
+async function applyPcChanges(d) {
+  let job = d.job && d.job.id ? await DB.get("jobs", d.job.id) : null;
+  if (!job && d.job && d.job.site) {  // an older survey whose id the PC doesn't know: the one survey here with that site name
+    const named = (await DB.all("jobs")).filter(j => (j.site || "").trim().toLowerCase() === d.job.site.trim().toLowerCase());
+    if (named.length === 1) job = named[0];
+  }
+  if (!job) { alert(`These are changes made on the PC for "${(d.job && d.job.site) || "a survey"}", but that survey isn't on this device.\n\nNothing has been changed.`); return; }
+  const trees = await DB.by("trees", "job", job.id);
+  const plan = planPcChanges(d.amendments, trees, job);
+  const n = plan.applied.length + plan.pcWon.length;
+  const list = a => a.slice(0, 12).join(", ") + (a.length > 12 ? "…" : "");
+  const notes = []
+    .concat(plan.pcWon.length ? [`⚠ Changed here as well, the PC's change is later and will be used – check: ${list(plan.pcWon)}`] : [])
+    .concat(plan.tabletWon.length ? [`⚠ Changed here since the PC changed them – this device's wording is kept, check: ${list(plan.tabletWon)}`] : [])
+    .concat(plan.missing.length ? [`Not on this device (no such tag): ${list(plan.missing)}`] : [])
+    .concat(plan.cant.length ? [`Can't be changed from the PC – change these here: ${list(plan.cant)}`] : []);
+  if (!n) { alert(`"${job.site}": nothing to change – ${plan.same.length ? "this device already has the PC's changes" : "none of the PC's changes could be used"}.` + (notes.length ? "\n\n" + notes.join("\n\n") : "")); return; }
+  if (!confirm(`Changes made on the PC for "${job.site}"${d.made ? " (" + d.made + ")" : ""}:\n\n${n} box${n === 1 ? "" : "es"} on ${plan.trees.size} tree${plan.trees.size === 1 ? "" : "s"} will be updated${plan.same.length ? `; ${plan.same.length} already the same` : ""}.\n\nTrees, photos and positions here are kept.` + (notes.length ? "\n\n" + notes.join("\n\n") : "") + "\n\nOK – update the survey.")) return;
+  const now = Date.now();
+  for (const t of plan.trees.values()) { t.updated = now; t.pcChanged = now; await DB.put("trees", t); }
+  job.updated = now; await DB.put("jobs", job);
+  toast(`${n} change${n === 1 ? "" : "s"} from the PC put into ${job.site}`, 4000);
+  go("#/job/" + job.id); if (location.hash === "#/job/" + job.id) route();
+}
+
+// ---- the firm's details for quick quotes, sent from the PC (Quote visits → Details for the phone…)
+async function applyPcSettings(d) {
+  const q = d.quote || {};
+  const st = await settings();
+  const cur = Object.assign({}, st.quote || {});
+  const names = { name: "Name", phone: "Phone", email: "Email", web: "Website", footer: "Footer line" };
+  const lines = [];
+  for (const k of Object.keys(names)) if (q[k] && q[k] !== cur[k]) lines.push(`${names[k]}: ${q[k]}`);
+  if (typeof q.vatReg === "boolean" && (q.vatReg !== (cur.vatReg ?? true) || +q.vatRate !== +(cur.vatRate ?? 20))) lines.push(`VAT: ${q.vatReg ? "registered, " + q.vatRate + "%" : "not registered"}`);
+  if (q.validDays && +q.validDays !== +(cur.validDays ?? 30)) lines.push(`Quotes valid for: ${q.validDays} days`);
+  if (q.logo && q.logo.url && (!cur.logo || cur.logo.url !== q.logo.url)) lines.push("Logo: the PC's letterhead logo");
+  const kinds = { contractor: "tree work", landscaper: "landscaping", consultant: "surveys" };
+  const curW = Object.assign({}, QQ_WORDING, cur.wording || {});
+  const newW = Object.keys(kinds).filter(k => q.wording && Array.isArray(q.wording[k]) && q.wording[k].length && JSON.stringify(q.wording[k]) !== JSON.stringify(curW[k]));
+  if (newW.length) lines.push(`Standard lines for ${newW.map(k => kinds[k]).join(", ")}`);
+  if (!lines.length) { alert("Quick quote details from the PC: this device already has them. Nothing has been changed."); return; }
+  if (!confirm(`Quick quote details from the PC – these will be set on this device (Settings → Quick quotes):\n\n${lines.join("\n")}\n\nAnything not listed stays as it is. OK – update.`)) return;
+  for (const k of Object.keys(names)) if (q[k]) cur[k] = q[k];
+  if (typeof q.vatReg === "boolean") { cur.vatReg = q.vatReg; if (q.vatRate != null && !isNaN(+q.vatRate)) cur.vatRate = +q.vatRate; }
+  if (q.validDays) cur.validDays = +q.validDays;
+  if (q.logo && q.logo.url && /^data:image\/jpeg;base64,/.test(q.logo.url)) cur.logo = { url: q.logo.url, w: +q.logo.w || 700, h: +q.logo.h || 300 };
+  if (newW.length) { cur.wording = Object.assign({}, cur.wording || {}); for (const k of newW) cur.wording[k] = q.wording[k].map(String); }
+  st.quote = cur; await DB.put("settings", st);
+  toast("Quick quote details updated from the PC", 3500); go("#/settings"); if (location.hash === "#/settings") route();
 }
 
 // Add another device's export to the survey already here: trees, photos and map features. A tree or feature on both
