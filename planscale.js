@@ -228,6 +228,10 @@ function zoneFor(job, lat, lon) {
 
 // how strongly a layer is drawn: 1 = as made, down to 0.2 = faint (set per layer on the Map layers page)
 function layerStrength(lay) { const o = +lay.opacity; return o >= 0.2 && o <= 1 ? o : 1; }
+// A layer can be switched off without being removed (v1.83): the tick on the Map layers page, or its tick box in the
+// map's own layer list. It stays on the job, keeps its slider, and its areas still name the trees' zones.
+function layerShown(lay) { return !(lay && lay.hidden); }
+function setLayerShown(lay, on) { if (on) delete lay.hidden; else lay.hidden = true; }
 
 // A sharper aerial image comes as several pieces (v1.78). The pieces are kept out of the job record – in the settings
 // store under "layertiles:<layer id>" – so saving a tree does not rewrite megabytes of picture each time.
@@ -304,7 +308,7 @@ function drawLayers(map, job, overlays) {
   (job.layers || []).filter(l => l.kind === "image").forEach(lay => {
     const opt = { opacity: layerStrength(lay), attribution: esc(lay.credit || ""), interactive: false };
     if (lay.sharp) {      // its pieces are read from the device and added as they arrive
-      const g = L.layerGroup(); g.addTo(map); overlays[esc(lay.name)] = g;
+      const g = L.layerGroup(); g._layId = lay.id; if (layerShown(lay)) g.addTo(map); overlays[esc(lay.name)] = g;
       // The layer list gives every picture its place in the pile (plans, then aerial pictures, in order). It does that
       // before the pieces are here, so the place is kept and given to each piece as it arrives – without it the pieces
       // sat underneath any plan and any other aerial picture.
@@ -316,7 +320,7 @@ function drawLayers(map, job, overlays) {
       return;
     }
     const im = trimmed(L.imageOverlay(lay.image, lay.bounds, opt), lay, lay.bounds);
-    im.addTo(map); overlays[esc(lay.name)] = im;
+    im._layId = lay.id; if (layerShown(lay)) im.addTo(map); overlays[esc(lay.name)] = im;
   });
   (job.layers || []).filter(l => l.kind !== "image").forEach((lay, i) => {
     const ntm = /National Tree Map/.test(lay.credit || "");
@@ -330,7 +334,7 @@ function drawLayers(map, job, overlays) {
       onEachFeature: (f, l) => { const n = featName(f.properties); if (n) l.bindTooltip(esc(n), { sticky: true, className: "tlabel" }); },
       interactive: true,
     });
-    g.addTo(map); overlays[esc(lay.name)] = g;
+    g._layId = lay.id; if (layerShown(lay)) g.addTo(map); overlays[esc(lay.name)] = g;
   });
 }
 
@@ -359,9 +363,10 @@ async function layersPage(jobId) {
   const ls = job.layers || [];
   app.innerHTML = `<header class="top"><button aria-label="Back" onclick="location.replace('#/job/${jobId}/map')">‹</button><h1>Map layers<span class="sub">${esc(job.site)}</span></h1></header>
   <main>
-    <p class="hint">Add survey zones, site boundaries, routes or target points as <b>GeoJSON</b> or <b>KML</b> (Google Earth), or an aerial photo / drone map made on the PC with <b>Aerial image → phone</b>. Each layer has a slider for how strongly it shows on the map. Shapefiles: convert them on the PC with <b>Map layers</b> (Import survey folder) or in QGIS. Trees take the name of the zone they stand in.</p>
+    <p class="hint">Add survey zones, site boundaries, routes or target points as <b>GeoJSON</b> or <b>KML</b> (Google Earth), or an aerial photo / drone map made on the PC with <b>Aerial image → phone</b>. Each layer has a tick to show it on the map or switch it off (it stays here, and its areas still name the trees' zones) and a slider for how strongly it shows. Shapefiles: convert them on the PC with <b>Map layers</b> (Import survey folder) or in QGIS. Trees take the name of the zone they stand in.</p>
     ${ls.map(l => `<div class="card"><div class="name">${esc(l.name)}</div><div class="meta">${l.kind === "image" ? "Aerial image" + (l.sharp ? ` – sharper, in ${l.pieces || "several"} pieces` : "") : (l.geojson.features || []).length + " shapes"}${l.credit ? " · " + esc(l.credit) : ""}</div>
       ${l.kind === "image" ? "" : `<label class="check"><input type="checkbox" data-z="${l.id}" ${l.zones !== false ? "checked" : ""}> Use its areas as zones for trees</label>`}
+      <label class="check"><input type="checkbox" data-show="${l.id}" ${layerShown(l) ? "checked" : ""}> Show on the map</label>
       <label for="lo_${l.id}">Show on the map at <b data-pc="${l.id}">${Math.round(layerStrength(l) * 100)}%</b></label><input id="lo_${l.id}" data-op="${l.id}" type="range" min="0.2" max="1" step="0.05" value="${layerStrength(l)}" style="display:block;width:100%;margin:4px 0 10px">
       <button class="btn small danger" data-del="${l.id}">Remove</button></div>`).join("") || `<div class="empty">No layers yet.</div>`}
     <button class="btn primary block" id="add">＋ Add a layer file</button>
@@ -373,6 +378,7 @@ async function layersPage(jobId) {
     catch (e) { toast("Couldn't read that file: " + e.message, 5000); } }; i.click(); };
   app.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => { await dropLayerTiles(ls.find(l => l.id === b.dataset.del)); job.layers = ls.filter(l => l.id !== b.dataset.del); await DB.put("jobs", job); await rezone(job); route(); });
   app.querySelectorAll("[data-z]").forEach(b => b.onchange = async () => { ls.find(l => l.id === b.dataset.z).zones = b.checked; await DB.put("jobs", job); });
+  app.querySelectorAll("[data-show]").forEach(b => b.onchange = async () => { setLayerShown(ls.find(l => l.id === b.dataset.show), b.checked); await DB.put("jobs", job); });
   app.querySelectorAll("[data-op]").forEach(b => {
     b.oninput = () => { const pc = app.querySelector(`[data-pc="${b.dataset.op}"]`); if (pc) pc.textContent = Math.round(+b.value * 100) + "%"; };
     b.onchange = async () => { ls.find(l => l.id === b.dataset.op).opacity = +b.value; await DB.put("jobs", job); };

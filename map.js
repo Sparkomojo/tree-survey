@@ -164,7 +164,25 @@ async function buildMap(el, job, trees, opts = {}) {
   overlays["Trees"] = treeLayer;
   if (opts.features && typeof drawFeatures === "function") drawFeatures(map, opts.features, overlays, opts.onFeature);
   drawNotes(map, job, overlays, opts.onNote, opts.skipNote);
-  L.control.layers(bases, overlays, { position: "topright" }).addTo(map);
+  const layerList = L.control.layers(bases, overlays, { position: "topright" }).addTo(map);
+  // A map layer ticked off or on in that list is remembered for this survey on this device (v1.83). Only a tick made by
+  // hand counts – never a layer the app itself puts on or takes off the map, so nothing can switch layers off behind
+  // the surveyor's back. Plans, trees and notes are not remembered – they come back each time the map is drawn.
+  let byHand = false, saving = Promise.resolve();
+  layerList.getContainer().addEventListener("click", () => { byHand = true; setTimeout(() => { byHand = false; }, 0); }, true);
+  map.on("overlayadd overlayremove", e => {
+    const id = e.layer && e.layer._layId;
+    if (!byHand || !id || typeof setLayerShown !== "function") return;
+    const on = e.type === "overlayadd";
+    const mine = (job.layers || []).find(l => l.id === id);
+    if (mine) setLayerShown(mine, on);
+    // saved into the stored survey, not this drawing's copy of it (while a plan is being placed the copy has no plan in use);
+    // one at a time, so two quick ticks cannot undo each other
+    saving = saving.then(async () => {
+      const j = await DB.get("jobs", job.id), l = j && (j.layers || []).find(x => x.id === id);
+      if (l && layerShown(l) !== on) { setLayerShown(l, on); await DB.put("jobs", j); }
+    }).catch(() => { });
+  });
   L.control.scale({ imperial: false, position: "bottomleft" }).addTo(map);
 
   const placed = [];
@@ -392,7 +410,11 @@ async function mapPage(jobId, mode, treeId) {
       <button class="btn small" onclick="go('#/job/${jobId}/layers')">▦ Layers</button>
       <button class="btn small" onclick="go('#/job/${jobId}/map/note/new')">✎ Note</button>
       <button class="btn small primary" id="newHere">＋ Tree at the ✛</button></div>
-      <div class="hint">${trees.length - unplaced} of ${trees.length} trees shown${unplaced ? ` · ${unplaced} without a position` : ""}. Tap a tree to open it.${(job.notes || []).length ? ` ${job.notes.length} map note${job.notes.length === 1 ? "" : "s"} (🔒 = private).` : ""}</div>`;
+      <div class="hint">${trees.length - unplaced} of ${trees.length} trees shown${unplaced ? ` · ${unplaced} without a position` : ""}. Tap a tree to open it.${(job.notes || []).length ? ` ${job.notes.length} map note${job.notes.length === 1 ? "" : "s"} (🔒 = private).` : ""}<span id="layOff"></span></div>`;
+    // say so when a map layer is switched off, so nobody wonders where the aerial photograph or the zones went
+    const offNote = () => { const el = $("#layOff"); if (!el) return; const n = (job.layers || []).filter(l => l.hidden).length;
+      el.textContent = n ? ` ${n} map layer${n === 1 ? "" : "s"} switched off (▦ Layers).` : ""; };
+    offNote(); map.on("overlayadd overlayremove", offNote);
     cross.hidden = false;
     $("#newHere").onclick = () => setTreePos([map.getCenter().lat, map.getCenter().lng], "map", "Placed on map");
     if (multi) {
