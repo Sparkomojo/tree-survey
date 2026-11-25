@@ -369,7 +369,7 @@ async function mapPage(jobId, mode, treeId) {
   const target = treeId && treeId !== "new" ? trees.find(t => t.id === treeId) : null;
   const backTo = target ? `#/job/${jobId}/tree/${target.id}` : `#/job/${jobId}`;
   const title = mode === "pick" ? `Place ${target ? esc(target.tag) : "tree"}` : mode === "pickend" ? `End of ${target ? esc(target.tag) : "line"}`
-    : mode === "pickvia" ? `Bend in ${target ? esc(target.tag) : "line"}` : mode === "pickline" ? `Draw ${target ? esc(target.tag) : "line"}` : mode === "measure" ? `Measure ${target ? esc(target.tag) : "tree"}` : "Map";
+    : mode === "pickstand" ? `Standpoint for ${target ? esc(target.tag) : "tree"}` : mode === "pickvia" ? `Bend in ${target ? esc(target.tag) : "line"}` : mode === "pickline" ? `Draw ${target ? esc(target.tag) : "line"}` : mode === "measure" ? `Measure ${target ? esc(target.tag) : "tree"}` : "Map";
   app.innerHTML = mapShell(title, esc(job.site), `location.replace('${backTo}')`);
   leaveHook = async () => closeMap();
   const others = trees.filter(t => !target || t.id !== target.id);
@@ -532,6 +532,17 @@ async function mapPage(jobId, mode, treeId) {
       const c = map.getCenter(), p = { lat: +c.lat.toFixed(7), lon: +c.lng.toFixed(7), src: "map" };
       if (mode === "pickend") target.end = p; else target.via = (target.via || []).concat([p]);
       target.updated = Date.now(); await DB.put("trees", target); job.updated = Date.now(); await DB.put("jobs", job);
+      location.replace(backTo);
+    };
+    return;
+  }
+  if (mode === "pickstand") {    // a known point to shoot from (v1.86) – the tree is placed later, from the distance and bearing
+    panel.innerHTML = `<div class="hint">Move the map so the <b>✛</b> is on the spot you stand over or set the tripod on – a gatepost, fence corner or manhole you can see on the aerial photo or plan. Pinch to zoom in close.</div>
+      <div class="row"><button class="btn" onclick="location.replace('${backTo}')">Cancel</button><button class="btn primary" id="use">Use this spot</button></div>`;
+    $("#use").onclick = async () => {
+      const c = map.getCenter();
+      target.standDraft = { lat: +c.lat.toFixed(7), lon: +c.lng.toFixed(7), acc: null, src: "map" };
+      target.updated = Date.now(); await DB.put("trees", target);
       location.replace(backTo);
     };
     return;

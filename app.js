@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.85";
+const APP_VERSION = "1.86";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -597,6 +597,17 @@ function L_dist(a, b) {
 // 10 cm, so a sub-metre or RTK receiver doesn't read "±0 m"
 const accKeep = a => a < 1 ? Math.round(a * 100) / 100 : Math.round(a * 10) / 10;
 const accTxt = a => { a = +a || 0; return a > 0 && a < 0.1 ? a.toFixed(2) : a > 0 && a < 2 ? a.toFixed(1) : String(Math.round(a)); };
+// where a laser offset was measured from, in words (v1.86): "a GPS standpoint (±4 m)", "a known point, NZ 12345 67890 (±0.5 m)" …
+const sameSpot = (a, b) => a && b && Math.abs(+a.lat - +b.lat) < 1e-7 && Math.abs(+a.lon - +b.lon) < 1e-7;
+function standText(p) {
+  if (!p) return "";
+  const acc = p.acc != null && p.acc !== "" ? `±${accTxt(p.acc)} m` : "accuracy not stated";
+  const via = p.via ? `, the same as ${p.via}` : "";
+  if (p.src === "grid") return `a known point, ${p.ref || OSGB.fromLatLon(+p.lat, +p.lon).ref} (${acc}${via})`;
+  if (p.src === "map") return `a standpoint picked on the map (${acc}${via})`;
+  if (p.src === "gpsavg") return `a GPS standpoint averaged over ${p.n} fixes in ${p.secs} s (${acc}${via})`;
+  return `a GPS standpoint (${acc}${via})`;
+}
 let gpsWatch = null, gpsTimer = null;
 function stopGps() { if (gpsWatch !== null) navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; clearTimeout(gpsTimer); }
 function startGps(onFix, onState) {
@@ -785,10 +796,15 @@ async function treePage(jobId, treeId) {
     <div class="hint" id="zoneOut">${t.zone ? "Zone: " + esc(t.zone) : ""}</div>
     <div class="row" style="margin-top:8px"><button class="btn small" id="onMap">🗺 Place on map</button><button class="btn small" id="measure">📏 Measure from 2 points</button></div>
     <details class="more" id="laserBox" ${t.posSource === "laser" ? "open" : ""}><summary>🎯 Laser offset – from where you stand</summary>
-      <div class="hint">For a tree you can't stand beside, or where GPS is poor under the canopy: stand in the open, get a GPS fix here, aim at the stem and fire. The tree goes at that horizontal distance along the bearing. A rangefinder with a compass (TruPulse 360i) fills both boxes; otherwise type them in (bearing from a hand compass).</div>
+      <div class="hint">For a tree you can't stand beside, or where GPS is poor under the canopy: set where you stand, aim at the stem and fire. The tree goes at that horizontal distance along the bearing. A rangefinder with a compass (TruPulse 360i) fills both boxes; otherwise type them in (bearing from a hand compass).</div>
       <div class="card"><div class="status"><div class="big" id="stRef">${t.offset ? esc(OSGB.fromLatLon(+t.offset.from.lat, +t.offset.from.lon).ref) : "No standpoint yet"}</div>
-        <div class="meta" id="stMeta">${t.offset ? `standpoint ±${accTxt(t.offset.from.acc)} m` : "Stand in the open with a clear view of the tree"}</div></div>
-        <button class="btn small" id="stGps">📍 GPS here</button></div>
+        <div class="meta" id="stMeta">${t.offset ? esc(standText(t.offset.from)) : "Set where you stand – by GPS, or a known point"}</div></div></div>
+      <div class="row wrap"><button class="btn small" id="stGps">📍 GPS here</button><button class="btn small" id="stAvg">⏱ Average GPS</button>
+        <button class="btn small" id="stMap">🗺 Pick on map</button><button class="btn small" id="stLast" hidden></button></div>
+      <div class="grid2" style="align-items:end"><div><label for="st_ref">Known point – grid ref</label><input id="st_ref" placeholder="NZ 12345 67890" autocapitalize="characters" autocomplete="off"></div>
+        <div><label for="st_acc">How good is it? (± m, optional)</label><input id="st_acc" inputmode="decimal" autocomplete="off" placeholder="e.g. 0.5"></div></div>
+      <div class="row"><button class="btn small" id="stRefBtn">Use this grid ref</button></div>
+      <div class="hint">A tripod over a known point: set the standpoint once – by its grid ref, or by picking the spot on the aerial photo or plan – then on each later tree tap <b>↺ Same standpoint</b>, so every tree shot from the tripod uses the same point.</div>
       <div class="grid2"><div><label for="o_hd">Horizontal distance (m)</label><input id="o_hd" inputmode="decimal" value="${t.offset ? t.offset.hd : ""}"></div>
         <div><label for="o_az">Bearing to the tree (°)</label><input id="o_az" inputmode="decimal" value="${t.offset ? t.offset.az : ""}"></div></div>
       <label class="check"><input type="checkbox" id="o_stem" ${t.offset && !t.offset.add ? "" : "checked"}> Aimed at the stem surface – add half the stem diameter</label>
@@ -1244,49 +1260,89 @@ async function treePage(jobId, treeId) {
   };
   $("#onMap").onclick = () => toMap("pick");
   $("#measure").onclick = () => toMap("measure");
-  // --- laser offset: GPS standpoint + horizontal distance + bearing (typed, or from a Bluetooth rangefinder)
+  // --- laser offset: a standpoint (GPS, averaged GPS, a known grid ref, a spot picked on the map, or the last tree's)
+  //     + horizontal distance + bearing (typed, or from a Bluetooth rangefinder)
   let stand = t.offset ? t.offset.from : null;
-  const laserStatus = () => {
-    const el = $("#laserStat"); if (!el) return;
-    el.textContent = LASER.dev ? `Connected to ${LASER.name} – fire it at the tree${LASER.kind === "trupulse" ? " (height routine fills Height)" : ""}.` : "";
-    $("#laserBtn").textContent = LASER.dev ? "Disconnect" : "🔗 Connect rangefinder";
+  const setStand = (p, quiet) => {
+    stand = p; $("#stRef").textContent = OSGB.fromLatLon(+p.lat, +p.lon).ref; $("#stMeta").textContent = standText(p);
+    $("#laserBox").open = true;
+    if (!quiet) toast("Standpoint set – now the distance and bearing");
   };
-  LASER.status = laserStatus;
-  LASER.on = msg => {
-    if (msg.type === "ht" && msg.ht != null) {
-      const h = $("#f_height"); h.value = msg.ht; h.dispatchEvent(new Event("input", { bubbles: true })); h.dispatchEvent(new Event("change", { bubbles: true }));
-      toast(`Height ${msg.ht} m`); return;
-    }
-    const hd = msg.type === "dist" ? msg.d : msg.hd;
-    if (hd != null) { $("#laserBox").open = true; $("#o_hd").value = hd; }
-    if (msg.az != null) $("#o_az").value = msg.az;
-    toast(laserText(msg) + (msg.type === "dist" ? " (use the DISTO's horizontal-distance mode on slopes)" : ""));
-  };
-  laserStatus();
-  $("#laserBtn").onclick = async e => {
+  if (t.standDraft) { setStand(t.standDraft, true); delete t.standDraft; touch(); }   // back from 🗺 Pick on map
+  const last = job.lastStand;
+  if (last && last.lat != null && !(t.offset && sameSpot(t.offset.from, last))) {
+    $("#stLast").hidden = false;
+    $("#stLast").textContent = `↺ Same standpoint as ${last.tag || "the last tree"}`;
+    $("#stLast").onclick = e => {
+      e.preventDefault();
+      const p = Object.assign({}, last); delete p.tag; delete p.at; p.via = last.tag || "";
+      setStand(p);
+    };
+  }
+  $("#stMap").onclick = e => { e.preventDefault(); toMap("pickstand"); };
+  $("#stRefBtn").onclick = e => {
     e.preventDefault();
-    if (LASER.dev) { laserDisconnect(); laserStatus(); return; }
-    try { await laserConnect(); laserStatus(); toast(`Connected to ${LASER.name}`); }
-    catch (err) { if (err.name !== "NotFoundError") toast(err.message, 5000); }
+    const txt = $("#st_ref").value.trim(), en = OSGB.parse(txt);
+    if (!en) { toast("Type a grid ref like NZ 12345 67890, or eastings and northings like 412345, 567890", 5000); $("#st_ref").focus(); return; }
+    const ll = OSGB.toLatLon(en[0], en[1]);
+    if (!ll || !isFinite(ll[0])) { toast("That grid ref is outside the National Grid"); return; }
+    const a = parseFloat(String($("#st_acc").value).replace(",", "."));
+    setStand({ lat: +(+ll[0]).toFixed(7), lon: +(+ll[1]).toFixed(7), acc: a > 0 ? a : null, src: "grid", ref: OSGB.gridRef(en[0], en[1]) });
+  };
+  // averaged GPS: a fix every 2 s for up to two minutes, polled rather than watched, so one dropped fix doesn't end it
+  let avgPoll = null, avgTimer = null;
+  const avgStop = () => { clearInterval(avgPoll); clearTimeout(avgTimer); avgPoll = null; const b = $("#stAvg"); if (b) b.textContent = "⏱ Average GPS"; };
+  let avgFinish = () => {};
+  $("#stAvg").onclick = e => {
+    e.preventDefault();
+    if (avgPoll !== null) return avgFinish();
+    if (!("geolocation" in navigator)) return toast("This device has no GPS – type a grid ref or pick the spot on the map");
+    stopGps();
+    const fixes = [], t0 = Date.now();
+    let misses = 0;
+    const show = () => { $("#stMeta").textContent = `Averaging – ${fixes.length} fix${fixes.length === 1 ? "" : "es"}, ${Math.round((Date.now() - t0) / 1000)} s. Keep the tablet still; tap ⏹ to finish.`; };
+    avgFinish = () => {
+      avgStop();
+      if (!fixes.length) return toast("No GPS fix – try in the open, or use a known point");
+      const best = Math.min(...fixes.map(f => f.acc));
+      const use = fixes.filter(f => f.acc <= Math.max(best * 2, best + 3));     // leave out the poor fixes from the first seconds
+      const lat = use.reduce((a, f) => a + f.lat, 0) / use.length, lon = use.reduce((a, f) => a + f.lon, 0) / use.length;
+      const accs = use.map(f => f.acc).sort((a, b) => a - b), med = accs[Math.floor(accs.length / 2)];
+      setStand({ lat: +lat.toFixed(7), lon: +lon.toFixed(7), acc: accKeep(med), src: "gpsavg", n: use.length, secs: Math.round((Date.now() - t0) / 1000) });
+    };
+    const ask = () => navigator.geolocation.getCurrentPosition(pos => {
+      if (avgPoll === null) return;
+      if (!$("#stAvg")) return avgStop();                                        // left the tree's page
+      fixes.push({ lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy }); show();
+    }, err => {
+      if (err.code === 1) { avgStop(); toast("Location permission is off – allow it for this site in your browser settings"); }
+      else if (++misses >= 10 && !fixes.length) { avgStop(); toast("No GPS fix – try in the open, or use a known point"); }
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+    $("#stAvg").textContent = "⏹ Finish averaging"; $("#laserBox").open = true; show();
+    avgPoll = setInterval(() => { show(); ask(); }, 2000); ask();
+    avgTimer = setTimeout(() => { if (avgPoll !== null) avgFinish(); }, 120000);          // two minutes at most
   };
   $("#stGps").onclick = e => {
-    e.preventDefault();
-    linePoint(p => {
-      stand = p; $("#stRef").textContent = OSGB.fromLatLon(p.lat, p.lon).ref;
-      $("#stMeta").textContent = `standpoint ±${accTxt(p.acc)} m`;
-    }, "standpoint");
+    e.preventDefault(); avgStop();
+    linePoint(p => setStand(p, true), "standpoint");
   };
   $("#o_apply").onclick = async e => {
     e.preventDefault();
     const hd = parseFloat(String($("#o_hd").value).replace(",", ".")), az = parseFloat(String($("#o_az").value).replace(",", "."));
-    if (!stand) return toast("Get a GPS fix where you're standing first");
+    if (!stand) return toast("Set where you're standing first – GPS, a grid ref or a spot on the map");
     if (!(hd > 0) || !(az >= 0 && az <= 360)) return toast("Enter the horizontal distance and a bearing (0–360°)");
     const s = await settings(), dec = +s.declination || 0, add = $("#o_stem").checked ? stemRadius(t.dbh) : 0;
     const [lat, lon] = offsetLL(+stand.lat, +stand.lon, hd + add, az + dec);
     t.lat = +lat.toFixed(7); t.lon = +lon.toFixed(7);
-    t.acc = Math.round(((stand.acc != null && stand.acc !== "" ? +stand.acc : 5) + 0.3 + hd * 0.0175) * 10) / 10;  // + ~1° of compass error across the distance
+    const known = stand.src === "grid" || stand.src === "map";     // a known point with no stated accuracy adds nothing of its own
+    const base = stand.acc != null && stand.acc !== "" ? +stand.acc : known ? 0 : 5;
+    t.acc = Math.round((base + 0.3 + hd * 0.0175) * 10) / 10;  // + ~1° of compass error across the distance
     t.posSource = "laser"; t.offset = { from: stand, hd, az, dec, add: Math.round(add * 100) / 100 };
-    t.posNote = `Laser offset ${hd} m at ${az}° from a GPS standpoint (±${accTxt(stand.acc)} m)`;
+    t.posNote = `Laser offset ${hd} m at ${az}° from ${standText(stand)}`;
+    const j = (await DB.get("jobs", jobId)) || job;     // fresh: the job may have been saved elsewhere since this page opened
+    j.lastStand = Object.assign({}, stand, { tag: t.tag || "", at: Date.now() }); delete j.lastStand.via;
+    j.updated = Date.now(); await DB.put("jobs", j); job.lastStand = j.lastStand;
+    $("#stLast").hidden = true;
     t.grid = OSGB.fromLatLon(t.lat, t.lon).ref; t.zone = zoneFor(job, t.lat, t.lon) || t.zone || "";
     stopGps(); $("#gref").textContent = t.grid; $("#gstat").textContent = t.posNote;
     touch(); toast("Position set from the laser offset");
