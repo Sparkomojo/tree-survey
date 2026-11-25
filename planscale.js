@@ -235,24 +235,67 @@ function setLayerShown(lay, on) { if (on) delete lay.hidden; else lay.hidden = t
 
 // A sharper aerial image comes as several pieces (v1.78). The pieces are kept out of the job record – in the settings
 // store under "layertiles:<layer id>" – so saving a tree does not rewrite megabytes of picture each time.
-const TILE_URLS = {};   // layer id -> [{bounds, url}]: one set of addresses per visit, however often the map is drawn
+// Beside them is one light picture of the whole area (v1.84). The map shows that when zoomed out, and only the pieces
+// in view when zoomed in: every piece on the map every time it was drawn – 24 million pixels on a parkland job – was
+// more than an older tablet could unpack without slowing down.
+const TILE_URLS = {};   // layer id -> promise of {tiles: [{bounds, url}], whole: {url, w} or null}: one set of addresses per visit
 const tilesKey = id => "layertiles:" + id;
+const WHOLE_PX = 2048;  // the longest side of a whole-area picture made on this device
 function dataUrlBlob(u) {
   const i = u.indexOf(","), bin = atob(u.slice(i + 1)), a = new Uint8Array(bin.length);
   for (let k = 0; k < bin.length; k++) a[k] = bin.charCodeAt(k);
   return new Blob([a], { type: (u.slice(0, i).match(/^data:([^;,]+)/) || [])[1] || "image/jpeg" });
 }
-async function layerTiles(lay) {
-  if (!TILE_URLS[lay.id]) {
-    const rec = await DB.get("settings", tilesKey(lay.id));
-    TILE_URLS[lay.id] = ((rec && rec.tiles) || []).map(t => ({ bounds: t.bounds, url: URL.createObjectURL(t.blob) }));
+// The whole-area picture for pieces that came without one (a layer loaded before v1.84): each piece is unpacked once,
+// small, and drawn in its place. Done once for the layer, then kept beside the pieces.
+async function wholeFromPieces(lay, tiles) {
+  const [[S, W], [N, E]] = lay.bounds, wide = (E - W) * Math.cos((S + N) / 2 * Math.PI / 180), high = N - S;
+  const k = WHOLE_PX / Math.max(wide, high), cw = Math.max(1, Math.round(wide * k)), ch = Math.max(1, Math.round(high * k));
+  const c = document.createElement("canvas"); c.width = cw; c.height = ch;
+  const x = c.getContext("2d"); x.fillStyle = "#ebebe6"; x.fillRect(0, 0, cw, ch); x.imageSmoothingQuality = "high";
+  const small = [];
+  for (const t of tiles) {
+    const [[s, w], [n, e]] = t.bounds;
+    const x0 = (w - W) / (E - W) * cw, y0 = (N - n) / (N - S) * ch, pw = (e - w) / (E - W) * cw, ph = (n - s) / (N - S) * ch;
+    if (!(pw > 0 && ph > 0)) continue;
+    small.push({ x0, y0, pw, ph, bmp: await createImageBitmap(t.blob, { resizeWidth: Math.max(1, Math.ceil(pw)), resizeHeight: Math.max(1, Math.ceil(ph)), resizeQuality: "medium" }) });
   }
-  return TILE_URLS[lay.id];
+  // Each piece goes exactly where it belongs, to a fraction of a pixel – a tree may be placed against this picture.
+  // All are drawn a touch too big first, so the soft edge of a piece blends into its neighbour and not into the
+  // background (no pale lines along the joins).
+  for (const p of small) x.drawImage(p.bmp, p.x0 - 1, p.y0 - 1, p.pw + 2, p.ph + 2);
+  for (const p of small) { x.drawImage(p.bmp, p.x0, p.y0, p.pw, p.ph); p.bmp.close(); }
+  const blob = await new Promise((ok, no) => c.toBlob(b => b ? ok(b) : no(new Error("no picture")), "image/jpeg", 0.85));
+  c.width = c.height = 1;
+  return { blob, w: cw };
+}
+function layerTiles(lay) {
+  if (TILE_URLS[lay.id]) return TILE_URLS[lay.id];
+  const mine = (async () => {
+    const rec = (await DB.get("settings", tilesKey(lay.id))) || { id: tilesKey(lay.id), tiles: [] };
+    rec.tiles = rec.tiles || [];
+    if (!rec.whole && rec.tiles.length > 1 && lay.bounds) {
+      try {
+        if (typeof toast === "function") toast("Getting the aerial image ready – this happens once", 5000);
+        const whole = await wholeFromPieces(lay, rec.tiles);
+        // kept only if the layer is still the one asked about (it may have been removed or loaded again meanwhile)
+        if (TILE_URLS[lay.id] === mine) { rec.whole = whole; await DB.put("settings", rec); }
+      } catch (e) { console.error(e); }
+    }
+    return { tiles: rec.tiles.map(t => ({ bounds: t.bounds, url: URL.createObjectURL(t.blob) })),
+      whole: rec.whole ? { url: URL.createObjectURL(rec.whole.blob), w: rec.whole.w } : null };
+  })();
+  TILE_URLS[lay.id] = mine;
+  mine.catch(() => { if (TILE_URLS[lay.id] === mine) delete TILE_URLS[lay.id]; });
+  return mine;
+}
+function forgetTileUrls(id) {
+  const was = TILE_URLS[id]; delete TILE_URLS[id];
+  if (was) was.then(p => { p.tiles.concat(p.whole ? [p.whole] : []).forEach(t => { try { URL.revokeObjectURL(t.url); } catch (e) { } }); }).catch(() => { });
 }
 async function dropLayerTiles(lay) {
   if (!lay || !lay.sharp) return;
-  (TILE_URLS[lay.id] || []).forEach(t => { try { URL.revokeObjectURL(t.url); } catch (e) { } });
-  delete TILE_URLS[lay.id];
+  forgetTileUrls(lay.id);
   try { await DB.del("settings", tilesKey(lay.id)); } catch (e) { }
 }
 // every sharper layer of a job, when the job itself goes (deleted, or replaced by a copy from a zip)
@@ -282,8 +325,13 @@ async function imageLayer(gj, fallbackName, id) {
   if (Array.isArray(gj.clip) && gj.clip.length >= 3 && gj.clip.every(p => Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1]))) lay.clip = gj.clip;
   const pieces = Array.isArray(gj.tiles) ? gj.tiles.filter(t => t && t.image && Array.isArray(t.bounds)) : [];
   if (pieces.length) {          // the sharper version: keep its pieces beside the job, not in it
-    (TILE_URLS[lay.id] || []).forEach(t => { try { URL.revokeObjectURL(t.url); } catch (e) { } }); delete TILE_URLS[lay.id];
-    await DB.put("settings", { id: tilesKey(lay.id), tiles: pieces.map(t => ({ bounds: t.bounds, blob: dataUrlBlob(t.image) })) });
+    forgetTileUrls(lay.id);
+    const rec = { id: tilesKey(lay.id), tiles: pieces.map(t => ({ bounds: t.bounds, blob: dataUrlBlob(t.image) })) };
+    try {      // the file's own picture of the whole area: shown when zoomed out, and under the pieces when zoomed in
+      const blob = dataUrlBlob(gj.image), bmp = await createImageBitmap(blob);
+      rec.whole = { blob, w: bmp.width }; bmp.close();
+    } catch (e) { }
+    await DB.put("settings", rec);
     lay.sharp = true; lay.pieces = pieces.length;
   } else lay.image = gj.image;
   return lay;
@@ -303,22 +351,54 @@ async function starterImageLayers(zip, job) {
   return out;
 }
 
+// metres of ground to one pixel of the screen, where the map is centred
+function mapMetresPerPixel(map) { return 40075016.686 * Math.cos(map.getCenter().lat * Math.PI / 180) / (256 * Math.pow(2, map.getZoom())); }
+
+// A sharper aerial layer on the map (v1.84). Zoomed out, the whole-area picture is all that is drawn. Zoomed in, the
+// pieces in view are added on top of it and those out of view are taken away, so the device holds a handful of pieces
+// and never all of them. Nothing is read from the device until the layer is first shown.
+// The layer has a small pane of its own inside the pictures' pane. The layer's strength is the pane's, so the
+// whole-area picture and the pieces lying on it fade as one; and the pane takes the layer's place in the pile (plans,
+// then aerial pictures, in order – the layer list hands the places out), so the pieces sit above any plan.
+function sharpLayer(map, lay) {
+  const g = L.layerGroup(); g._layId = lay.id;
+  const paneName = "aerial-" + lay.id, pane = map.createPane(paneName, map.getPane("overlayPane"));
+  pane.style.zIndex = 1; pane.style.opacity = layerStrength(lay); pane.style.pointerEvents = "none";
+  g.setZIndex = function (z) { pane.style.zIndex = z; return this; };
+  const opt = { pane: paneName, attribution: esc(lay.credit || ""), interactive: false };
+  const [[S, W], [N, E]] = lay.bounds || [[0, 0], [0, 0]], across = (E - W) * 111320 * Math.cos((S + N) / 2 * Math.PI / 180);   // metres
+  const on = new Map();     // piece number -> its picture on the map
+  let pack = null, asked = false;
+  const refresh = () => {
+    if (!pack || !map._loaded || !map.hasLayer(g)) return;
+    // the pieces earn their keep once the whole-area picture would be stretched well past its own detail
+    const close = !pack.whole || mapMetresPerPixel(map) < across / pack.whole.w * 0.6;
+    const view = map.getBounds().pad(0.15);
+    pack.tiles.forEach((t, i) => {
+      const want = close && view.intersects(t.bounds);
+      if (want && !on.has(i)) on.set(i, trimmed(L.imageOverlay(t.url, t.bounds, opt), lay, t.bounds).addTo(g));
+      else if (!want && on.has(i)) { g.removeLayer(on.get(i)); on.delete(i); }
+    });
+  };
+  g.on("add", () => {
+    if (asked) return refresh();
+    asked = true;
+    layerTiles(lay).then(p => {
+      pack = p;
+      if (p.whole) trimmed(L.imageOverlay(p.whole.url, lay.bounds, opt), lay, lay.bounds).addTo(g);
+      refresh();
+    }).catch(() => { asked = false; });
+  });
+  g.on("remove", () => { on.forEach(o => g.removeLayer(o)); on.clear(); });    // switched off, or the map closed: let the pieces go
+  map.on("moveend zoomend", refresh);
+  return g;
+}
+
 function drawLayers(map, job, overlays) {
   // aerial photos / drone maps first, so shapes and trees sit on top
   (job.layers || []).filter(l => l.kind === "image").forEach(lay => {
     const opt = { opacity: layerStrength(lay), attribution: esc(lay.credit || ""), interactive: false };
-    if (lay.sharp) {      // its pieces are read from the device and added as they arrive
-      const g = L.layerGroup(); g._layId = lay.id; if (layerShown(lay)) g.addTo(map); overlays[esc(lay.name)] = g;
-      // The layer list gives every picture its place in the pile (plans, then aerial pictures, in order). It does that
-      // before the pieces are here, so the place is kept and given to each piece as it arrives – without it the pieces
-      // sat underneath any plan and any other aerial picture.
-      g.setZIndex = function (z) { this._place = z; return L.LayerGroup.prototype.setZIndex.call(this, z); };
-      layerTiles(lay).then(ts => ts.forEach(t => {
-        const o = trimmed(L.imageOverlay(t.url, t.bounds, opt), lay, t.bounds).addTo(g);
-        if (g._place != null) o.setZIndex(g._place);
-      })).catch(() => { });
-      return;
-    }
+    if (lay.sharp) { const g = sharpLayer(map, lay); if (layerShown(lay)) g.addTo(map); overlays[esc(lay.name)] = g; return; }
     const im = trimmed(L.imageOverlay(lay.image, lay.bounds, opt), lay, lay.bounds);
     im._layId = lay.id; if (layerShown(lay)) im.addTo(map); overlays[esc(lay.name)] = im;
   });
