@@ -557,20 +557,48 @@ async function mapPage(jobId, mode, treeId) {
   const step = () => {
     if (!state.A || !state.B) {
       const which = state.A ? "B" : "A";
-      panel.innerHTML = `<div class="hint"><b>Point ${which}:</b> move the map so the <b>✛</b> is on something you can measure from – a building corner on the plan, a post, or another tree (tap it to centre).</div>
+      const last = job.lastStand && job.lastStand.lat != null ? job.lastStand : null;
+      panel.innerHTML = `<div class="hint"><b>Point ${which}:</b> move the map so the <b>✛</b> is on something you can measure from – a building corner on the plan, a post, a tripod spot or another tree (tap it to centre) – or give a known point below.</div>
         <div class="grid2" style="align-items:end"><div><label for="d">Distance from ${which} to the tree (m)</label><input id="d" inputmode="decimal" autocomplete="off" placeholder="e.g. 12.4"></div>
-        <button class="btn primary" id="setPt">Set point ${which}</button></div>
-        ${state.A ? `<div class="hint">A: ${state.A.r} m ✓</div>` : ""}
+        <button class="btn primary" id="setPt">Set point ${which} at ✛</button></div>
+        <div class="grid2" style="align-items:end"><div><label for="ptRef">or ${which} at a grid ref</label><input id="ptRef" placeholder="NZ 12345 67890" autocapitalize="characters" autocomplete="off"></div>
+        <button class="btn" id="setRef">Set ${which} at this grid ref</button></div>
+        ${last ? `<div class="row"><button class="btn small" id="setLast">↺ ${which} at the last standpoint (${esc(last.tag || "last tree")})</button></div>` : ""}
+        ${state.A ? `<div class="hint">A: ${state.A.r} m from ${esc(state.A.what)} ✓</div>` : ""}
+        <div class="hint">From two tripod spots, use the TruPulse's horizontal distance (HD) to the tree – to the stem, or to the crown top for a distant tree. The two sight lines should meet at something like a right angle.</div>
+        <label class="check"><input type="checkbox" id="ptTop" ${state.top ? "checked" : ""}> Distances to the crown top (approximate)</label>
         <div class="row" style="margin-top:6px"><button class="btn small" onclick="location.replace('${backTo}')">Cancel</button></div>`;
-      $("#setPt").onclick = () => {
+      const dist = () => {
         const r = parseFloat(($("#d").value || "").replace(",", "."));
-        if (!(r > 0)) { toast("Enter the measured distance first"); $("#d").focus(); return; }
-        const c = map.getCenter(), ll = [c.lat, c.lng];
+        if (!(r > 0)) { toast("Enter the measured distance first"); $("#d").focus(); return null; }
+        return r;
+      };
+      $("#setRef").onclick = () => {
+        const r = dist(); if (r === null) return;
+        const en = OSGB.parse($("#ptRef").value.trim());
+        if (!en) { toast("Type a grid ref like NZ 12345 67890, or eastings and northings like 412345, 567890", 5000); $("#ptRef").focus(); return; }
+        const ll = OSGB.toLatLon(en[0], en[1]);
+        if (!ll || !isFinite(ll[0])) { toast("That grid ref is outside the National Grid"); return; }
+        map.setView(ll, Math.max(map.getZoom(), 18), { animate: false });
+        setPoint([+ll[0], +ll[1]], r, OSGB.gridRef(en[0], en[1]));
+      };
+      if (last) $("#setLast").onclick = () => {
+        const r = dist(); if (r === null) return;
+        map.setView([+last.lat, +last.lon], Math.max(map.getZoom(), 18), { animate: false });
+        setPoint([+last.lat, +last.lon], r, `the standpoint used for ${last.tag || "the last tree"} (${OSGB.fromLatLon(+last.lat, +last.lon).ref})`);
+      };
+      $("#setPt").onclick = () => {
+        const r = dist(); if (r === null) return;
+        const c = map.getCenter();
+        setPoint([c.lat, c.lng], r, `a point on the map (${OSGB.fromLatLon(c.lat, c.lng).ref})`);
+      };
+      $("#ptTop").onchange = e => { state.top = e.target.checked; };
+      const setPoint = (ll, r, what) => {
         const label = state.A ? "B" : "A";
         const ring = L.circle(ll, { radius: r, color: "#B0007A", weight: 2, dashArray: "6 4", fill: false, interactive: false }).addTo(map);
         const pin = L.circleMarker(ll, { radius: 6, color: "#fff", weight: 2, fillColor: "#B0007A", fillOpacity: 1 }).addTo(map)
           .bindTooltip(label, { permanent: true, direction: "top", className: "tlabel" });
-        if (!state.A) { state.A = { ll, r }; state.mA = [ring, pin]; } else { state.B = { ll, r }; state.mB = [ring, pin]; }
+        if (!state.A) { state.A = { ll, r, what }; state.mA = [ring, pin]; } else { state.B = { ll, r, what }; state.mB = [ring, pin]; }
         if (state.A && state.B) solve(); else step();
       };
       return;
@@ -580,7 +608,7 @@ async function mapPage(jobId, mode, treeId) {
     cross.hidden = true;
     const res = intersect(state.A.ll, state.A.r, state.B.ll, state.B.r);
     state.cand.forEach(m => map.removeLayer(m)); state.cand = [];
-    const note = `Measured: ${state.A.r} m from A, ${state.B.r} m from B`;
+    const note = `Measured: ${state.A.r} m from ${state.A.what}, ${state.B.r} m from ${state.B.what}` + (state.top ? " – to the crown top (approximate)" : "");
     if (!res.pts.length) { panel.innerHTML = `<div class="warn">${res.msg}</div><button class="btn block" id="again">Start again</button>`; $("#again").onclick = restart; return; }
     res.pts.forEach((ll, i) => {
       const m = L.marker(ll, { icon: L.divIcon({ className: "cand", html: `<span>${i + 1}</span>`, iconSize: [34, 34] }) }).addTo(map);
@@ -599,7 +627,7 @@ async function mapPage(jobId, mode, treeId) {
   const restart = () => {
     [state.mA, state.mB].forEach(g => (g || []).forEach(m => map.removeLayer(m)));
     state.cand.forEach(m => map.removeLayer(m));
-    Object.assign(state, { A: null, B: null, mA: null, mB: null, cand: [] }); cross.hidden = false; step();
+    Object.assign(state, { A: null, B: null, mA: null, mB: null, cand: [] }); cross.hidden = false; step();      // state.top is kept
   };
   step();
 }

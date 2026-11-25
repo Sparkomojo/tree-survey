@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.86";
+const APP_VERSION = "1.87";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -598,6 +598,9 @@ function L_dist(a, b) {
 const accKeep = a => a < 1 ? Math.round(a * 100) / 100 : Math.round(a * 10) / 10;
 const accTxt = a => { a = +a || 0; return a > 0 && a < 0.1 ? a.toFixed(2) : a > 0 && a < 2 ? a.toFixed(1) : String(Math.round(a)); };
 // where a laser offset was measured from, in words (v1.86): "a GPS standpoint (±4 m)", "a known point, NZ 12345 67890 (±0.5 m)" …
+// aimed at the crown top (v1.87): the top may sit off the stem by a lean or a one-sided crown – 3 m, or 15 % of the tree's height if more
+const crownTopAllowance = h => { const v = parseFloat(String(h || "").replace(",", ".").split(/[-–]/).pop()); return Math.max(3, v > 0 ? v * 0.15 : 0); };
+const CROWN_TOP_NOTE = "3 m (or 15 % of the tree's height, if more) is added to its stated accuracy";
 const sameSpot = (a, b) => a && b && Math.abs(+a.lat - +b.lat) < 1e-7 && Math.abs(+a.lon - +b.lon) < 1e-7;
 function standText(p) {
   if (!p) return "";
@@ -807,7 +810,9 @@ async function treePage(jobId, treeId) {
       <div class="hint">A tripod over a known point: set the standpoint once – by its grid ref, or by picking the spot on the aerial photo or plan – then on each later tree tap <b>↺ Same standpoint</b>, so every tree shot from the tripod uses the same point.</div>
       <div class="grid2"><div><label for="o_hd">Horizontal distance (m)</label><input id="o_hd" inputmode="decimal" value="${t.offset ? t.offset.hd : ""}"></div>
         <div><label for="o_az">Bearing to the tree (°)</label><input id="o_az" inputmode="decimal" value="${t.offset ? t.offset.az : ""}"></div></div>
-      <label class="check"><input type="checkbox" id="o_stem" ${t.offset && !t.offset.add ? "" : "checked"}> Aimed at the stem surface – add half the stem diameter</label>
+      <label class="check"><input type="checkbox" id="o_stem" ${t.offset && (!t.offset.add || t.offset.top) ? "" : "checked"}> Aimed at the stem surface – add half the stem diameter</label>
+      <label class="check"><input type="checkbox" id="o_top" ${t.offset && t.offset.top ? "checked" : ""}> Aimed at the crown top (approximate) – for a tree whose stem you can't see</label>
+      <div class="hint" id="o_topHint" ${t.offset && t.offset.top ? "" : "hidden"}>The top of a tree is seldom straight above its stem – a lean or a one-sided crown can put it several metres off. The tree is marked as approximate, and ${CROWN_TOP_NOTE}.</div>
       <div class="row"><button class="btn small" id="laserBtn">🔗 Connect rangefinder</button><button class="btn small primary" id="o_apply">Use this position</button></div>
       <div class="hint" id="laserStat"></div>
     </details>
@@ -1280,6 +1285,8 @@ async function treePage(jobId, treeId) {
     };
   }
   $("#stMap").onclick = e => { e.preventDefault(); toMap("pickstand"); };
+  $("#o_top").onchange = e => { $("#o_topHint").hidden = !e.target.checked; if (e.target.checked) $("#o_stem").checked = false; };
+  $("#o_stem").onchange = e => { if (e.target.checked) { $("#o_top").checked = false; $("#o_topHint").hidden = true; } };
   $("#stRefBtn").onclick = e => {
     e.preventDefault();
     const txt = $("#st_ref").value.trim(), en = OSGB.parse(txt);
@@ -1331,14 +1338,16 @@ async function treePage(jobId, treeId) {
     const hd = parseFloat(String($("#o_hd").value).replace(",", ".")), az = parseFloat(String($("#o_az").value).replace(",", "."));
     if (!stand) return toast("Set where you're standing first – GPS, a grid ref or a spot on the map");
     if (!(hd > 0) || !(az >= 0 && az <= 360)) return toast("Enter the horizontal distance and a bearing (0–360°)");
-    const s = await settings(), dec = +s.declination || 0, add = $("#o_stem").checked ? stemRadius(t.dbh) : 0;
+    const top = $("#o_top").checked;
+    const s = await settings(), dec = +s.declination || 0, add = !top && $("#o_stem").checked ? stemRadius(t.dbh) : 0;
     const [lat, lon] = offsetLL(+stand.lat, +stand.lon, hd + add, az + dec);
     t.lat = +lat.toFixed(7); t.lon = +lon.toFixed(7);
     const known = stand.src === "grid" || stand.src === "map";     // a known point with no stated accuracy adds nothing of its own
     const base = stand.acc != null && stand.acc !== "" ? +stand.acc : known ? 0 : 5;
-    t.acc = Math.round((base + 0.3 + hd * 0.0175) * 10) / 10;  // + ~1° of compass error across the distance
+    t.acc = Math.round((base + 0.3 + hd * 0.0175 + (top ? crownTopAllowance(t.height) : 0)) * 10) / 10;  // + ~1° of compass error across the distance
     t.posSource = "laser"; t.offset = { from: stand, hd, az, dec, add: Math.round(add * 100) / 100 };
-    t.posNote = `Laser offset ${hd} m at ${az}° from ${standText(stand)}`;
+    if (top) t.offset.top = true;
+    t.posNote = `Laser offset ${hd} m at ${az}° ${top ? "to the crown top (approximate) " : ""}from ${standText(stand)}`;
     const j = (await DB.get("jobs", jobId)) || job;     // fresh: the job may have been saved elsewhere since this page opened
     j.lastStand = Object.assign({}, stand, { tag: t.tag || "", at: Date.now() }); delete j.lastStand.via;
     j.updated = Date.now(); await DB.put("jobs", j); job.lastStand = j.lastStand;
