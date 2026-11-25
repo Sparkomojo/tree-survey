@@ -402,7 +402,7 @@ const CHECKLISTS = [
    "Site / job reference",
    "Purpose (photos / photogrammetry / inspection)"
   ],
-  "note": "DJI Air 3S tree photography and 3DF Zephyr photogrammetry – use with the drone pre-flight check and the RAMS. Answer N/A to the photogrammetry items if you aren't making a model. In winter, leaf-off light shows the branch structure well. Fill in the flight log at the end.",
+  "note": "DJI Air 3S tree photography and 3DF Zephyr photogrammetry – use with the drone pre-flight check and the RAMS. Answer N/A to the photogrammetry and measuring items if you aren't making a model. In winter, leaf-off light shows the branch structure well. Fill in the flight log at the end.",
   "team": false,
   "log": [
    "Take-off time",
@@ -414,6 +414,8 @@ const CHECKLISTS = [
    "Weather and wind",
    "Trees / area flown",
    "Images backed up to",
+   "Ground control points (how many, where from)",
+   "Check tree: ground vs model height (m)",
    "Flight issues or incidents"
   ],
   "sections": [
@@ -450,6 +452,18 @@ const CHECKLISTS = [
      "Single tree: orbits at three heights (low, mid, above the crown), camera about 45°, 10–15° between shots, plus a few nadir shots",
      "Site grid: 80% front overlap, 70% side overlap",
      "Calm – moving leaves spoil a model more than anything else, so wait for the wind to drop"
+    ]
+   ],
+   [
+    "Measuring from the model (heights, crowns, positions)",
+    [
+     "Ground control points: about five, spread round the site (corners and middle), at known points – tripod known points, or features you can see on the aerial photo – with their grid refs written down before you fly",
+     "Each control point shows clearly from the air – a board or cross about 0.5 m across, or a sharp feature such as a manhole or fence corner",
+     "A check tree: one tree's height and position measured from the ground (TruPulse, known point) and kept out of the control points, to compare with the model",
+     "Takeoff point noted – the height on the drone's screen is from where it took off, not from the ground under each tree",
+     "Grid flown slowly and steadily, at one height for the whole grid, so the photos aren't blurred",
+     "Ground showing between the crowns (gaps, or leaf-off) – under a closed canopy the model has no ground, so heights can't be worked out",
+     "Model checked against the check tree before any height, spread or position goes into a report"
     ]
    ],
    [
