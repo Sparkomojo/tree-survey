@@ -151,8 +151,9 @@ async function buildMap(el, job, trees, opts = {}) {
   for (const pl of (job.plans && job.plans.length ? job.plans : job.plan ? [job.plan] : [])) {
     if (!pl.blob || !pl.ctrl || pl.ctrl.length !== 2) continue;
     const t = planTransform(pl);
-    const lay = L.imageOverlay.rotated(URL.createObjectURL(pl.blob), t.toLL(0, 0), t.toLL(pl.w, 0), t.toLL(0, pl.h),
-      { opacity: pl.opacity ?? 0.75, interactive: false });
+    // a large plan is drawn as a light copy with its pieces where they are in view (planPicture, v1.85)
+    const lay = typeof planPicture === "function" ? planPicture(map, job, pl)
+      : L.imageOverlay.rotated(URL.createObjectURL(pl.blob), t.toLL(0, 0), t.toLL(pl.w, 0), t.toLL(0, pl.h), { opacity: pl.opacity ?? 0.75, interactive: false });
     const label = (job.plans || []).length > 1 ? "Plan: " + esc((pl.name || "Site plan").replace(/\.(jpe?g|png|pdf)$/i, "")) : "Site plan";
     overlays[label] = lay;
     if (pl === job.plan) { planLayer = lay; planBounds = planExtent(pl); }
@@ -647,6 +648,7 @@ async function planPage(jobId) {
       if (act === "del") {
         if (!confirm(`Remove ${planLabel(pl)} from this survey?`)) return;
         job.plans = job.plans.filter(p => p !== pl);
+        if (typeof dropPlanTiles === "function") await dropPlanTiles(job, pl);
         if (job.plan === pl) usePlan(job, (job.plans[0] || {}).id || null);
         await save(); route();
       }

@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.84";
+const APP_VERSION = "1.85";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -1761,7 +1761,9 @@ async function importZip(file) {
       // here too. The PC's plans have ids like p-0123abcdef; a plan loaded on this device has another kind and stays.
       if (zp.list.length) {
         const carried = new Set(Object.values(idMap));
-        existing.plans = existing.plans.filter(q => !(/^p-[0-9a-f]{10}$/.test(q.id || "") && !carried.has(q.id)));
+        const goes = q => /^p-[0-9a-f]{10}$/.test(q.id || "") && !carried.has(q.id);
+        if (typeof dropPlanTiles === "function") for (const q of existing.plans.filter(goes)) await dropPlanTiles(existing, q);
+        existing.plans = existing.plans.filter(q => !goes(q));
       }
       const want = (zp.active && idMap[zp.active]) || existing.planId;
       usePlan(existing, existing.plans.some(q => q.id === want) ? want : (existing.plans[0] || {}).id || null);

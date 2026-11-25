@@ -299,7 +299,10 @@ async function dropLayerTiles(lay) {
   try { await DB.del("settings", tilesKey(lay.id)); } catch (e) { }
 }
 // every sharper layer of a job, when the job itself goes (deleted, or replaced by a copy from a zip)
-async function dropJobTiles(job) { for (const l of (job && job.layers) || []) await dropLayerTiles(l); }
+async function dropJobTiles(job) {
+  for (const l of (job && job.layers) || []) await dropLayerTiles(l);
+  for (const p of (job && job.plans) || []) await dropPlanTiles(job, p);     // and the pieces of its large plans (v1.85)
+}
 
 // A picture that was cut to a shape (an area of interest) carries its outline as fractions of its own box (v1.79):
 // [[across, down], …]. Each picture on the map is trimmed to it, so the street map shows round the edge, not white.
@@ -311,8 +314,25 @@ function clipFor(lay, b) {
     return ((lon - w) / (e - w) * 100).toFixed(3) + "% " + ((n - lat) / (n - s) * 100).toFixed(3) + "%";
   }).join(", ") + ")";
 }
+// A piece that lies wholly inside the outline needs no trimming – and trimming is work for the device every time the
+// map moves (v1.85). Inside means: its four corners are inside, and no side or corner of the outline cuts into it.
+function insideClip(lay, b) {
+  if (!Array.isArray(lay.clip) || lay.clip.length < 3 || !lay.bounds) return false;
+  const [[S, W], [N, E]] = lay.bounds, [[s, w], [n, e]] = b, P = lay.clip;
+  const x0 = (w - W) / (E - W), x1 = (e - W) / (E - W), y0 = (N - n) / (N - S), y1 = (N - s) / (N - S);    // the piece, as fractions of the layer's box
+  if (![[x0, y0], [x1, y0], [x1, y1], [x0, y1]].every(c => pointInRing(c, P))) return false;
+  const cuts = (ax, ay, bx, by, cx, cy, dx, dy) => ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) * ((bx - ax) * (dy - ay) - (by - ay) * (dx - ax)) < 0
+    && ((dx - cx) * (ay - cy) - (dy - cy) * (ax - cx)) * ((dx - cx) * (by - cy) - (dy - cy) * (bx - cx)) < 0;
+  const sides = [[x0, y0, x1, y0], [x1, y0, x1, y1], [x1, y1, x0, y1], [x0, y1, x0, y0]];
+  for (let i = 0; i < P.length; i++) {
+    const [ax, ay] = P[i], [bx, by] = P[(i + 1) % P.length];
+    if (ax > x0 && ax < x1 && ay > y0 && ay < y1) return false;
+    if (sides.some(([cx, cy, dx, dy]) => cuts(ax, ay, bx, by, cx, cy, dx, dy))) return false;
+  }
+  return true;
+}
 function trimmed(overlay, lay, b) {
-  const cp = clipFor(lay, b);
+  const cp = insideClip(lay, b) ? "" : clipFor(lay, b);
   if (cp) overlay.on("add", () => { const el = overlay.getElement(); if (el) { el.style.clipPath = cp; el.style.webkitClipPath = cp; } });
   return overlay;
 }
@@ -368,26 +388,159 @@ function sharpLayer(map, lay) {
   const opt = { pane: paneName, attribution: esc(lay.credit || ""), interactive: false };
   const [[S, W], [N, E]] = lay.bounds || [[0, 0], [0, 0]], across = (E - W) * 111320 * Math.cos((S + N) / 2 * Math.PI / 180);   // metres
   const on = new Map();     // piece number -> its picture on the map
-  let pack = null, asked = false;
+  let pack = null, asked = false, whole = null, near = false;
+  // The whole-area picture lies under the pieces only until they have all arrived. Then it is hidden (v1.85), so the
+  // device has one picture fewer to lay over the others each time the map moves; it comes back while new pieces are on
+  // their way, and whenever the map is zoomed out.
+  const settle = () => {
+    const el = whole && whole.getElement();
+    if (el) el.style.visibility = near && on.size && [...on.values()].every(o => o._ready) ? "hidden" : "";
+  };
   const refresh = () => {
     if (!pack || !map._loaded || !map.hasLayer(g)) return;
     // the pieces earn their keep once the whole-area picture would be stretched well past its own detail
-    const close = !pack.whole || mapMetresPerPixel(map) < across / pack.whole.w * 0.6;
-    const view = map.getBounds().pad(0.15);
+    const close = near = !pack.whole || mapMetresPerPixel(map) < across / pack.whole.w * 0.6;
+    const view = map.getBounds().pad(0.2);
     pack.tiles.forEach((t, i) => {
       const want = close && view.intersects(t.bounds);
-      if (want && !on.has(i)) on.set(i, trimmed(L.imageOverlay(t.url, t.bounds, opt), lay, t.bounds).addTo(g));
-      else if (!want && on.has(i)) { g.removeLayer(on.get(i)); on.delete(i); }
+      if (want && !on.has(i)) {
+        const o = trimmed(L.imageOverlay(t.url, t.bounds, opt), lay, t.bounds);
+        o.once("load", () => { o._ready = true; settle(); });
+        on.set(i, o.addTo(g));
+      } else if (!want && on.has(i)) { g.removeLayer(on.get(i)); on.delete(i); }
     });
+    settle();
   };
   g.on("add", () => {
     if (asked) return refresh();
     asked = true;
     layerTiles(lay).then(p => {
       pack = p;
-      if (p.whole) trimmed(L.imageOverlay(p.whole.url, lay.bounds, opt), lay, lay.bounds).addTo(g);
+      if (p.whole) whole = trimmed(L.imageOverlay(p.whole.url, lay.bounds, opt), lay, lay.bounds).addTo(g);
       refresh();
     }).catch(() => { asked = false; });
+  });
+  g.on("remove", () => { on.forEach(o => g.removeLayer(o)); on.clear(); });    // switched off, or the map closed: let the pieces go
+  map.on("moveend zoomend", refresh);
+  return g;
+}
+
+// ---------------------------------------------------------------- a large plan picture, drawn where it is looked at (v1.85)
+// A plan from the PC is up to 4,096 pixels on its long side – 12 million pixels for an A3 sheet – and the map drew all
+// of it at every zoom. A plan over PLAN_HEAVY pixels is now cut up on the device, once: a light copy of the whole plan
+// and its full detail in pieces, kept beside the survey (settings store, "plantiles:<job id>:<plan id>"), never in the
+// job record and never exported – the job keeps the picture itself. The map shows the light copy, and adds the pieces
+// in view on top of it once it is zoomed in far enough for their detail to tell. A smaller plan, or one this device
+// cannot cut up, is drawn as it always was.
+const PLAN_HEAVY = 6000000;   // more pixels than this and the plan is drawn in pieces
+const PLAN_TILE = 512;        // a piece, in the plan's own pixels
+const PLAN_WHOLE = 3000000;   // pixels in the light copy of the whole plan
+const PLAN_URLS = {};         // "<job id>:<plan id>" -> {sig, pack: promise of {w, h, whole: {url, w}, tiles: [{x0, y0, x1, y1, url}]}}
+const PLAIN_PLAN_URLS = {};   // "<job id>:<plan id>" -> {sig, url}: one address for a plan picture per visit, so it is unpacked once
+const planKey = (job, pl) => "plantiles:" + job.id + ":" + pl.id;
+const planSig = pl => [pl.blob.size, pl.w, pl.h].join(":");    // a different picture under the same name gives a different one
+function planUrl(job, pl) {
+  const key = job.id + ":" + pl.id, sig = planSig(pl), had = PLAIN_PLAN_URLS[key];
+  if (had && had.sig === sig) return had.url;
+  if (had) try { URL.revokeObjectURL(had.url); } catch (e) { }
+  return (PLAIN_PLAN_URLS[key] = { sig, url: URL.createObjectURL(pl.blob) }).url;
+}
+async function cutPlan(pl) {
+  const bmp = await createImageBitmap(pl.blob, { imageOrientation: "from-image" });
+  try {
+    const W = bmp.width, H = bmp.height, c = document.createElement("canvas"), x = c.getContext("2d");
+    const jpeg = q => new Promise((ok, no) => c.toBlob(b => b ? ok(b) : no(new Error("no picture")), "image/jpeg", q));
+    const k = Math.min(1, Math.sqrt(PLAN_WHOLE / (W * H)));
+    c.width = Math.max(1, Math.round(W * k)); c.height = Math.max(1, Math.round(H * k));
+    x.imageSmoothingQuality = "high"; x.drawImage(bmp, 0, 0, c.width, c.height);
+    const whole = { blob: await jpeg(0.85), w: c.width };
+    const tiles = [];
+    for (let y0 = 0; y0 < H; y0 += PLAN_TILE) for (let x0 = 0; x0 < W; x0 += PLAN_TILE) {
+      // a piece laps one pixel over its neighbours to the right and below, so no hair-line shows between them
+      const x1 = Math.min(W, x0 + PLAN_TILE + 1), y1 = Math.min(H, y0 + PLAN_TILE + 1);
+      c.width = x1 - x0; c.height = y1 - y0; x.drawImage(bmp, x0, y0, x1 - x0, y1 - y0, 0, 0, x1 - x0, y1 - y0);
+      tiles.push({ x0, y0, x1, y1, blob: await jpeg(0.95) });
+    }
+    c.width = c.height = 1;
+    return { w: W, h: H, whole, tiles };
+  } finally { if (bmp.close) bmp.close(); }
+}
+function planTiles(job, pl) {
+  const key = job.id + ":" + pl.id, sig = planSig(pl);
+  if (PLAN_URLS[key] && PLAN_URLS[key].sig === sig) return PLAN_URLS[key].pack;
+  forgetPlanUrls(key);
+  const pack = (async () => {
+    let rec = await DB.get("settings", planKey(job, pl));
+    if (!rec || rec.sig !== sig || !rec.whole || !(rec.tiles || []).length) {
+      if (typeof toast === "function") toast("Getting the plan ready – this happens once", 5000);
+      rec = Object.assign({ id: planKey(job, pl), sig }, await cutPlan(pl));
+      // kept only if the plan is still the one asked about (it may have been removed or replaced meanwhile)
+      if (PLAN_URLS[key] && PLAN_URLS[key].pack === pack) await DB.put("settings", rec);
+    }
+    return { w: rec.w, h: rec.h, whole: { url: URL.createObjectURL(rec.whole.blob), w: rec.whole.w },
+      tiles: rec.tiles.map(t => ({ x0: t.x0, y0: t.y0, x1: t.x1, y1: t.y1, url: URL.createObjectURL(t.blob) })) };
+  })();
+  PLAN_URLS[key] = { sig, pack };
+  pack.catch(() => { if (PLAN_URLS[key] && PLAN_URLS[key].pack === pack) delete PLAN_URLS[key]; });
+  return pack;
+}
+function forgetPlanUrls(key) {
+  const was = PLAN_URLS[key]; delete PLAN_URLS[key];
+  if (was) was.pack.then(p => { p.tiles.concat([p.whole]).forEach(t => { try { URL.revokeObjectURL(t.url); } catch (e) { } }); }).catch(() => { });
+}
+// a plan taken off a survey, or the survey itself gone: its pieces go too
+async function dropPlanTiles(job, pl) {
+  if (!job || !pl || !pl.id) return;
+  const key = job.id + ":" + pl.id;
+  forgetPlanUrls(key);
+  if (PLAIN_PLAN_URLS[key]) { try { URL.revokeObjectURL(PLAIN_PLAN_URLS[key].url); } catch (e) { } delete PLAIN_PLAN_URLS[key]; }
+  try { await DB.del("settings", planKey(job, pl)); } catch (e) { }
+}
+// A pinned plan as a layer for the map. A large one gets a small pane of its own inside the pictures' pane, as a sharper
+// aerial layer does: the plan's strength is the pane's, so the light copy and the pieces lying on it fade as one, and the
+// pane takes the plan's place in the pile. Nothing is read or cut up until the plan is first shown on the map.
+function planPicture(map, job, pl) {
+  const t = planTransform(pl), strength = pl.opacity ?? 0.75;
+  const plain = opt => L.imageOverlay.rotated(planUrl(job, pl), t.toLL(0, 0), t.toLL(pl.w, 0), t.toLL(0, pl.h), Object.assign({ interactive: false }, opt));
+  if (!(pl.w * pl.h > PLAN_HEAVY) || typeof createImageBitmap !== "function") return plain({ opacity: strength });
+  const g = L.layerGroup();
+  const paneName = "plan-" + pl.id, pane = map.createPane(paneName, map.getPane("overlayPane"));
+  pane.style.zIndex = 1; pane.style.opacity = strength; pane.style.pointerEvents = "none";
+  g.setZIndex = function (z) { pane.style.zIndex = z; return this; };
+  const opt = { pane: paneName, interactive: false };
+  const on = new Map(), boxes = [];     // piece number -> its picture on the map; -> the ground it covers
+  let pack = null, asked = false, whole = null, near = false;
+  // as for a sharper aerial layer: the light copy is hidden once the pieces in view have all arrived
+  const settle = () => {
+    const el = whole && whole.getElement();
+    if (el) el.style.visibility = near && on.size && [...on.values()].every(o => o._ready) ? "hidden" : "";
+  };
+  const at = (x, y) => t.toLL(x * pl.w / pack.w, y * pl.h / pack.h);     // the picture's own pixels -> the ground
+  const refresh = () => {
+    if (!pack || !map._loaded || !map.hasLayer(g)) return;
+    // the pieces come in a little before the light copy would have to be stretched: a plan has lettering, and
+    // stretched lettering is hard to read (an aerial picture waits longer – see sharpLayer)
+    const close = near = mapMetresPerPixel(map) < t.metresPerPx * pl.w / pack.whole.w * 0.75;
+    const view = map.getBounds().pad(0.25);
+    pack.tiles.forEach((p, i) => {
+      boxes[i] = boxes[i] || L.latLngBounds([at(p.x0, p.y0), at(p.x1, p.y0), at(p.x0, p.y1), at(p.x1, p.y1)]);
+      const want = close && view.intersects(boxes[i]);
+      if (want && !on.has(i)) {
+        const o = L.imageOverlay.rotated(p.url, at(p.x0, p.y0), at(p.x1, p.y0), at(p.x0, p.y1), opt);
+        o.once("load", () => { o._ready = true; settle(); });
+        on.set(i, o.addTo(g));
+      } else if (!want && on.has(i)) { g.removeLayer(on.get(i)); on.delete(i); }
+    });
+    settle();
+  };
+  g.on("add", () => {
+    if (asked) return refresh();
+    asked = true;
+    planTiles(job, pl).then(p => {
+      pack = p;
+      whole = L.imageOverlay.rotated(p.whole.url, t.toLL(0, 0), t.toLL(pl.w, 0), t.toLL(0, pl.h), opt).addTo(g);
+      refresh();
+    }).catch(e => { console.error(e); plain(opt).addTo(g); });     // it could not be cut up on this device: the plan as it always was
   });
   g.on("remove", () => { on.forEach(o => g.removeLayer(o)); on.clear(); });    // switched off, or the map closed: let the pieces go
   map.on("moveend zoomend", refresh);
