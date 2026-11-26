@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.93";
+const APP_VERSION = "1.94";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -214,7 +214,7 @@ async function route() {
   const h = location.hash.replace(/^#\/?/, "").split("/");
   if (h[0] !== "ideas") {   // for the Ideas page: where the tester was just before it
     const where = h[0] === "job" ? ({ tree: "Tree page", map: "Map", table: "Table", details: "Site details", photos: "Site photos", layers: "Map layers", plan: "Site plan", safety: "Site safety check", qitem: "Quote visit item", qquote: "Quick quote" }[h[2]] || "Survey page")
-      : ({ settings: "Settings", checks: "Checks", lone: "Lone working", notes: "Route notes", new: "New survey", quote: "Quote visit" }[h[0]] || "");
+      : ({ settings: "Settings", checks: "Checks", backup: "Back up", lone: "Lone working", notes: "Route notes", new: "New survey", quote: "Quote visit" }[h[0]] || "");
     try { sessionStorage.setItem("tree-survey-last", where); } catch (e) { }
   }
   window.scrollTo(0, 0);
@@ -252,6 +252,7 @@ async function route() {
     if (h[0] === "install") return installPage();
     if (h[0] === "lone") return await lonePage();
     if (h[0] === "checks") return await checksPage();
+    if (h[0] === "backup") return await backupPage();
     if (h[0] === "ideas" && FEEDBACK) return await ideasPage();
     if (h[0] === "incident" && h[1] === "new") return await incidentForm();
     if (h[0] === "check" && h[1] === "new") return await checkForm(h[2]);
@@ -397,7 +398,8 @@ async function homePage() {
       : "Surveys are saved on this device and work without signal. Tap <b>Export</b> on each site when you're done to send it to your PC (OneDrive, email…)."}</p>
     ${FEEDBACK ? `<button class="btn block" style="margin-top:8px" onclick="go('#/ideas')">💡 Ideas and problems – note one for the developer${ideas.length ? ` (${ideas.filter(i => !i.sent).length} to send)` : ""}</button>` : ""}
     <div class="row">
-      <button class="btn small" onclick="restoreZip()">Open a zip (survey, plans, works pack or a file from the PC)</button>
+      <button class="btn small" onclick="restoreZip()">Open a zip (survey, backup, plans, works pack or a file from the PC)</button>
+      ${jobs.length && !worksOnly ? `<button class="btn small" onclick="go('#/backup')">⛁ Back up all surveys</button>` : ""}
       ${worksOnly ? `<button class="btn small" id="survtools">Survey tools</button>` : ""}
       ${installed() ? "" : `<button class="btn small" id="install" onclick="installApp()">Install app</button>`}
     </div>
@@ -1873,7 +1875,29 @@ function photoFileNames(trees, photos, feats = []) {
   return names;
 }
 
-async function buildZip(jobId) {
+// The aerial images of a survey, written into its zip in the PC's own layer format ("ImageOverlay": the whole-area
+// picture, and the pieces of a sharper one), so the other device loads them exactly as it loads a starter's (v1.94).
+// -> [{ id, file }] for data.json's job.imageLayers
+const blobDataUrl = blob => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => no(r.error); r.readAsDataURL(blob); });
+async function aerialFiles(job, zip) {
+  const out = [];
+  for (const lay of (job.layers || []).filter(l => l.kind === "image")) {
+    const gj = { type: "ImageOverlay", name: lay.name, bounds: lay.bounds, credit: lay.credit || "" };
+    if (lay.clip) gj.clip = lay.clip;
+    if (lay.sharp) {
+      const rec = await DB.get("settings", tilesKey(lay.id));
+      if (!rec || !(rec.tiles || []).length) continue;
+      let whole = rec.whole;
+      if (!whole) { try { whole = await wholeFromPieces(lay, rec.tiles); } catch (e) { console.warn(e); } }   // a layer loaded before v1.84 has none yet
+      gj.image = await blobDataUrl((whole || rec.tiles[0]).blob);
+      gj.tiles = []; for (const t of rec.tiles) gj.tiles.push({ bounds: t.bounds, image: await blobDataUrl(t.blob) });
+    } else if (lay.image) gj.image = lay.image; else continue;
+    const file = `Layers/${lay.id}.json`;
+    zip.file(file, JSON.stringify(gj)); out.push({ id: lay.id, file });
+  }
+  return out;
+}
+async function buildZip(jobId, opts = {}) {
   const job = await DB.get("jobs", jobId);
   const trees = (await DB.by("trees", "job", jobId)).sort(byTag);
   const photos = await DB.by("photos", "job", jobId);
@@ -1930,13 +1954,110 @@ async function buildZip(jobId) {
     if (pl === job.plan) planOut = o;
   }
   if ((job.safety || []).length) zip.file("Site safety check.txt", safetyText(job));
+  const imgs = opts.aerial ? await aerialFiles(job, zip) : [];   // only a backup carries the aerial images – they are large
   zip.file("data.json", JSON.stringify({
     format: "tree-survey", version: 1, app: APP_VERSION, grid: OSGB.method(), exported: new Date().toISOString(),
-    job: Object.assign(strip(job), { plan: planOut, plans: plansOut, layers: (job.layers || []).filter(l => l.kind !== "image") }), trees, photos: photos.map(p => Object.assign(strip(p), { file: "Photos/" + names.get(p.id) })), surveyFile: xlsxName, features: feats,
+    job: Object.assign(strip(job), { plan: planOut, plans: plansOut, layers: (job.layers || []).filter(l => l.kind !== "image") }, imgs.length ? { imageLayers: imgs } : {}), trees, photos: photos.map(p => Object.assign(strip(p), { file: "Photos/" + names.get(p.id) })), surveyFile: xlsxName, features: feats,
   }, null, 1));
   const blob = await zip.generateAsync({ type: "blob", mimeType: "application/zip" });
-  const fname = `${safeName(job.site)} ${job.surveyDate || today()} survey.zip`;
+  const fname = `${safeName(job.site) || "Survey"} ${job.surveyDate || today()} survey.zip`;
   return { blob, fname, job, trees: trees.length, photos: photos.length };
+}
+
+// ---- Back up all surveys (v1.94): one zip holding each survey's own export zip (with its aerial images), so another
+// device – a phone when the tablet is left behind – can take everything in one go. Opening it adds the surveys this
+// device lacks and combines the ones it has (newest copy of each tree wins); nothing is ever removed.
+async function backupPage() {
+  const s = await settings();
+  const jobs = (await DB.all("jobs")).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const counts = {}; for (const j of jobs) counts[j.id] = (await DB.by("trees", "job", j.id)).length;
+  const anyAerial = jobs.some(j => (j.layers || []).some(l => l.kind === "image"));
+  const when = t => t ? new Date(t).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+  app.innerHTML = `
+  <header class="top"><button aria-label="Back" onclick="go('#/')">‹</button><h1>Back up all surveys</h1></header>
+  <main>
+    <p class="hint">Makes <b>one file</b> holding every survey ticked below – trees, photos, plans, map layers${anyAerial ? " and aerial images" : ""}. Save it to OneDrive (or email it to yourself). On another phone or tablet: <b>Open a zip</b> and choose the file – every survey arrives in one go. It is also your safety copy if this device is lost or broken.</p>
+    <p class="hint">${s.lastBackup ? `Last backup made on this device: <b>${esc(when(s.lastBackup))}</b>.` : "No backup has been made on this device yet."}</p>
+    ${jobs.length ? `<div class="row"><button class="btn small" id="bkAll">Tick all</button><button class="btn small" id="bkNone">Untick all</button></div>
+    <div id="bkList">${jobs.map(j => `<label class="check"><input type="checkbox" data-j="${j.id}" checked> ${esc(j.site || "(no name)")} <span class="hint">– ${esc(j.type || "")}${j.surveyDate ? ", " + esc(j.surveyDate) : ""}, ${counts[j.id]} tree${counts[j.id] === 1 ? "" : "s"}</span></label>`).join("")}</div>
+    ${anyAerial ? `<label class="check"><input type="checkbox" id="bkAerial" checked> Include aerial images <span class="hint">– a bigger file; untick if they are already on the other device</span></label>` : ""}
+    <button class="btn block primary" id="bkGo" style="margin-top:10px">Make the backup file</button>
+    <div class="hint" id="bkMsg"></div>
+    <p class="hint">Not in the file: this device's Settings (phrases, company details, the QTRA table) and its checklists and lone-working records.</p>` : `<div class="empty">There are no surveys on this device yet.</div>`}
+  </main>`;
+  if (!jobs.length) return;
+  const boxes = () => [...document.querySelectorAll("#bkList input[data-j]")];
+  $("#bkAll").onclick = e => { e.preventDefault(); boxes().forEach(b => b.checked = true); };
+  $("#bkNone").onclick = e => { e.preventDefault(); boxes().forEach(b => b.checked = false); };
+  $("#bkGo").onclick = async e => {
+    e.preventDefault();
+    const ids = boxes().filter(b => b.checked).map(b => b.dataset.j);
+    if (!ids.length) { toast("Tick at least one survey"); return; }
+    const btn = $("#bkGo"), msg = $("#bkMsg"); btn.disabled = true;
+    try {
+      const out = await buildBackup(ids, { aerial: !!($("#bkAerial") && $("#bkAerial").checked) }, (i, n, site) => { msg.textContent = `Packing ${i} of ${n}: ${site}…`; });
+      msg.textContent = `Made ${out.fname} – ${out.surveys} survey${out.surveys === 1 ? "" : "s"}, ${out.trees} trees, ${out.photos} photos, ${(out.blob.size / 1048576).toFixed(1)} MB.`;
+      const file = new File([out.blob], out.fname, { type: "application/zip" });
+      let shared = false;
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: out.fname, text: `Tree Survey backup – ${out.surveys} surveys` }); shared = true; }
+        catch (err) { if (err.name === "AbortError") { msg.textContent += " Not saved – sharing was cancelled."; btn.disabled = false; return; } }
+      }
+      if (!shared) {
+        const a = document.createElement("a"); a.href = URL.createObjectURL(out.blob); a.download = out.fname;
+        document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+        msg.textContent += " Saved to Downloads.";
+      }
+      s.lastBackup = Date.now(); await DB.put("settings", s);
+    } catch (err) { console.error(err); msg.textContent = "The backup could not be made: " + err.message + (ids.length > 1 ? " Try fewer surveys at a time." : ""); }
+    btn.disabled = false;
+  };
+}
+async function buildBackup(ids, opts, progress) {
+  const zip = new JSZip(), list = [], used = new Set(); let trees = 0, photos = 0, n = 0;
+  for (const id of ids) {
+    const job = await DB.get("jobs", id); if (!job) continue;
+    if (progress) progress(++n, ids.length, job.site || "(no name)");
+    const out = await buildZip(id, { aerial: !!opts.aerial });
+    let base = out.fname.replace(/\.zip$/i, ""), name = base, k = 2;
+    while (used.has(name.toLowerCase())) name = `${base} (${k++})`;
+    used.add(name.toLowerCase());
+    const file = `Surveys/${name}.zip`;
+    zip.file(file, out.blob, { binary: true, compression: "STORE" });   // already a zip: stored as it is
+    list.push({ id, site: job.site || "", client: job.client || "", type: job.type || "", surveyDate: job.surveyDate || "", trees: out.trees, photos: out.photos, file });
+    trees += out.trees; photos += out.photos;
+  }
+  const made = new Date(), pad = x => String(x).padStart(2, "0");
+  zip.file("backup.json", JSON.stringify({ format: "tree-survey-backup", version: 1, app: APP_VERSION, made: made.toISOString(), aerial: !!opts.aerial, surveys: list }, null, 1));
+  const blob = await zip.generateAsync({ type: "blob", mimeType: "application/zip", compression: "STORE" });
+  const fname = `Tree Survey backup ${made.getFullYear()}-${pad(made.getMonth() + 1)}-${pad(made.getDate())} ${pad(made.getHours())}${pad(made.getMinutes())}.zip`;
+  return { blob, fname, surveys: list.length, trees, photos };
+}
+async function restoreBackup(zip) {
+  let b;
+  try { b = JSON.parse(await zip.file("backup.json").async("string")); } catch (e) { toast("That backup file can't be read", 5000); return; }
+  if (b.format !== "tree-survey-backup" || !Array.isArray(b.surveys)) { toast("That backup file can't be read", 5000); return; }
+  const here = new Set((await DB.all("jobs")).map(j => j.id));
+  const fresh = b.surveys.filter(x => !here.has(x.id)), both = b.surveys.filter(x => here.has(x.id));
+  const made = b.made ? new Date(b.made).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "an unknown date";
+  if (!confirm(`This is a backup of ${b.surveys.length} survey${b.surveys.length === 1 ? "" : "s"}, made ${made}.\n\n`
+    + `${fresh.length} ${fresh.length === 1 ? "is" : "are"} not on this device and will be added${fresh.length ? ": " + fresh.slice(0, 8).map(x => x.site).join(", ") + (fresh.length > 8 ? "…" : "") : ""}.\n`
+    + `${both.length} ${both.length === 1 ? "is" : "are"} already here${both.length ? " – their trees and photos will be combined, keeping the newer copy of each tree" : ""}.\n\n`
+    + `Nothing on this device is removed. OK to go ahead?`)) return;
+  let added = 0, merged = 0, t = 0; const failed = [], dups = [];
+  for (const x of b.surveys) {
+    toast(`Opening ${x.site || "survey"}…`, 4000);
+    try {
+      const f = zip.file(x.file); if (!f) throw new Error("missing from the file");
+      const r = await importZip(new File([await f.async("blob")], "survey.zip", { type: "application/zip" }), { auto: true });
+      if (r && r.merged) { merged++; t += r.added || 0; if ((r.dup || []).length) dups.push(`${x.site}: ${r.dup.slice(0, 8).join(", ")}`); }
+      else if (r && r.restored) { added++; t += r.trees || 0; }
+    } catch (e) { console.error(e); failed.push(`${x.site || x.file} (${e.message})`); }
+  }
+  alert(`Backup opened: ${added} survey${added === 1 ? "" : "s"} added, ${merged} combined with what was here; ${t} tree${t === 1 ? "" : "s"} new to this device.`
+    + (dups.length ? `\n\n⚠ Tags used twice – renumber one of each:\n${dups.join("\n")}` : "")
+    + (failed.length ? `\n\n⚠ Could not open: ${failed.join("; ")}` : ""));
+  go("#/"); if (location.hash === "#/" || !location.hash) route();
 }
 
 async function exportJob(jobId) {
@@ -1960,9 +2081,10 @@ async function exportJob(jobId) {
 
 // ------------------------------------------------------------------ restore a zip (another device, or after clearing)
 function restoreZip() { pickFiles("#zipin", async files => { if (files[0]) await importZip(files[0]); }); }
-async function importZip(file) {
+async function importZip(file, opts = {}) {
   try {
     const zip = await JSZip.loadAsync(file);
+    if (zip.file("backup.json")) return await restoreBackup(zip);   // every survey of another device in one file (v1.94)
     const dj = zip.file("data.json");
     if (!dj) throw new Error("This zip wasn't made by Tree Survey (no data.json).");
     const d = JSON.parse(await dj.async("string"));
@@ -2029,6 +2151,13 @@ async function importZip(file) {
     if (existing) {  // the same survey from another device: add its trees, or replace what's here
       const mine = await DB.by("trees", "job", d.job.id), ids = new Set(mine.map(t => t.id));
       const fresh = (d.trees || []).filter(t => !ids.has(t.id)).length;
+      if (opts.auto) {   // from a backup: combine without asking – nothing here is removed
+        const r = await mergeZip(zip, d, existing, mine, true);
+        const job = await DB.get("jobs", d.job.id);
+        const miss = (d.job.imageLayers || []).filter(i => !(job.layers || []).some(l => l.id === i.id));   // an aerial image this device lacks
+        if (miss.length && typeof starterImageLayers === "function") { job.layers = (job.layers || []).concat(await starterImageLayers(zip, { imageLayers: miss })); await DB.put("jobs", job); }
+        return Object.assign({ merged: true }, r);
+      }
       if (confirm(`"${d.job.site}" is already on this device (${mine.length} trees). The zip has ${(d.trees || []).length} trees, ${fresh} of them not on this device.\n\nOK – ADD the zip's trees to the survey here (a survey done on two devices, or by two surveyors). A tree on both keeps whichever copy was changed last.\n\nCancel – other choices.`)) return await mergeZip(zip, d, existing, mine);
       if (!confirm(`Replace "${d.job.site}" on this device with the copy in the zip?\n\nThe ${mine.length} trees here now would be removed, and the plans and map layers become the zip's. Aerial images on this device are kept.`)) return;
     }
@@ -2052,8 +2181,9 @@ async function importZip(file) {
       const blob = new Blob([await f.async("arraybuffer")], { type: "image/jpeg" });
       const rec = Object.assign({}, p, { blob }); delete rec.file; await DB.put("photos", rec);
     }
+    if (opts.auto) return { restored: true, trees: d.trees.length, photos: d.photos.length };
     toast(`Restored ${d.job.site}: ${d.trees.length} trees` + (keepImg.length ? ` – aerial image${keepImg.length === 1 ? "" : "s"} kept` : ""), 3500); go("#/job/" + d.job.id);
-  } catch (e) { console.error(e); toast("Couldn't restore: " + e.message, 5000); }
+  } catch (e) { console.error(e); if (opts.auto) throw e; toast("Couldn't restore: " + e.message, 5000); }
 }
 
 // ---- changes made on the PC, sent back to the survey here (Survey data → Send changes to the tablet…)
@@ -2195,7 +2325,7 @@ async function applyPcSettings(d) {
 
 // Add another device's export to the survey already here: trees, photos and map features. A tree or feature on both
 // keeps whichever copy was changed last; nothing here is removed; this device's plans, layers and job details are kept.
-async function mergeZip(zip, d, job, mine) {
+async function mergeZip(zip, d, job, mine, quiet) {
   const byId = new Map(mine.map(t => [t.id, t]));
   let added = 0, updated = 0, kept = 0, photos = 0;
   const take = new Set();  // trees whose copy in the zip is the one kept
@@ -2229,7 +2359,7 @@ async function mergeZip(zip, d, job, mine) {
   const dup = Object.keys(tags).filter(k => tags[k] > 1);
   const msg = `${added} tree${added === 1 ? "" : "s"} added, ${updated} updated, ${kept} already up to date here; ${photos} photo${photos === 1 ? "" : "s"} added.`
     + (dup.length ? `\n\n⚠ ${dup.length} tag${dup.length === 1 ? " is" : "s are"} used twice – renumber one of each: ${dup.slice(0, 20).join(", ")}${dup.length > 20 ? "…" : ""}` : "");
-  alert(msg); go("#/job/" + job.id); if (location.hash === "#/job/" + job.id) route();
+  if (!quiet) { alert(msg); go("#/job/" + job.id); if (location.hash === "#/job/" + job.id) route(); }
   return { added, updated, kept, photos, dup };
 }
 
