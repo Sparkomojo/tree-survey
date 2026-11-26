@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.91";
+const APP_VERSION = "1.92";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -2004,7 +2004,7 @@ async function importZip(file) {
       const mine = await DB.by("trees", "job", d.job.id), ids = new Set(mine.map(t => t.id));
       const fresh = (d.trees || []).filter(t => !ids.has(t.id)).length;
       if (confirm(`"${d.job.site}" is already on this device (${mine.length} trees). The zip has ${(d.trees || []).length} trees, ${fresh} of them not on this device.\n\nOK – ADD the zip's trees to the survey here (a survey done on two devices, or by two surveyors). A tree on both keeps whichever copy was changed last.\n\nCancel – other choices.`)) return await mergeZip(zip, d, existing, mine);
-      if (!confirm(`Replace "${d.job.site}" on this device with the copy in the zip?\n\nThe ${mine.length} trees here now would be removed.`)) return;
+      if (!confirm(`Replace "${d.job.site}" on this device with the copy in the zip?\n\nThe ${mine.length} trees here now would be removed, and the plans and map layers become the zip's. Aerial images on this device are kept.`)) return;
     }
     for (const t of await DB.by("trees", "job", d.job.id)) await DB.del("trees", t.id);
     for (const p of await DB.by("photos", "job", d.job.id)) await DB.del("photos", p.id);
@@ -2012,7 +2012,11 @@ async function importZip(file) {
     for (const f of d.features || []) await DB.put("features", f);
     const zp = await zipPlans();
     d.job.plans = zp.list; usePlan(d.job, zp.active);
-    if (existing && typeof dropJobTiles === "function") await dropJobTiles(existing);   // its aerial layers go with the copy being replaced
+    // A survey's zip never carries aerial pictures (too large), so replacing a survey with one used to take the aerial
+    // photograph off the device. They now stay with the survey (v1.92); a starter that brings its own still replaces them.
+    const keepImg = existing && !d.job.imageLayers ? (existing.layers || []).filter(l => l.kind === "image") : [];
+    if (existing && typeof dropJobTiles === "function") await dropJobTiles(Object.assign({}, existing, { layers: (existing.layers || []).filter(l => !keepImg.includes(l)) }));
+    if (keepImg.length) d.job.layers = (d.job.layers || []).concat(keepImg);
     if (d.job.imageLayers && typeof starterImageLayers === "function") d.job.layers = (d.job.layers || []).concat(await starterImageLayers(zip, d.job));
     delete d.job.imageLayers;
     await DB.put("jobs", d.job);
@@ -2022,7 +2026,7 @@ async function importZip(file) {
       const blob = new Blob([await f.async("arraybuffer")], { type: "image/jpeg" });
       const rec = Object.assign({}, p, { blob }); delete rec.file; await DB.put("photos", rec);
     }
-    toast(`Restored ${d.job.site}: ${d.trees.length} trees`); go("#/job/" + d.job.id);
+    toast(`Restored ${d.job.site}: ${d.trees.length} trees` + (keepImg.length ? ` – aerial image${keepImg.length === 1 ? "" : "s"} kept` : ""), 3500); go("#/job/" + d.job.id);
   } catch (e) { console.error(e); toast("Couldn't restore: " + e.message, 5000); }
 }
 
