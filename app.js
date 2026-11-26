@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.90";
+const APP_VERSION = "1.91";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -465,7 +465,7 @@ async function detailsPage(id) {
       <div><label for="surveyDate">Survey date</label><input id="surveyDate" type="date" value="${esc(job.surveyDate)}"></div>
       <div><label for="consultant">Surveyor</label><input id="consultant" value="${esc(job.consultant || "")}"></div>
     </div>
-    <label for="firstTag">First tag number (optional)</label><input id="firstTag" value="${esc(job.firstTag || "")}" placeholder="T1 – or e.g. 2001 if you use pre-numbered tags" autocapitalize="characters" autocomplete="off">
+    <label for="firstTag">First tag number (optional)</label><input id="firstTag" value="${esc(job.firstTag || "")}" placeholder="T1 – or e.g. 2001 for pre-numbered tags (trees are then T2001, T2002 …)" autocapitalize="characters" autocomplete="off">
     <label for="weather">Weather / conditions</label><input id="weather" value="${esc(job.weather)}">
     <div class="chips phr">${s.phrases.weather.map(w => `<button class="chip" data-add="weather" data-sep=", ">${esc(w)}</button>`).join("")}</div>
     <label for="siteDescription">Site description</label><textarea id="siteDescription">${esc(job.siteDescription)}</textarea>
@@ -599,24 +599,18 @@ async function jobPage(id, treesOnly) {
 }
 
 function nextTag(trees, job) {
-  // first tree: the survey's starting tag (e.g. 2001 or T2001), otherwise T1
-  if (!trees.length) return (job && job.firstTag) ? String(job.firstTag).trim().toUpperCase() : "T1";
+  // Single trees are always T + number (Mark, 26 Nov 2026: "having the T is a good thing for numbering") – v1.91.
+  // first tree: the survey's starting tag; a plain number there (2001) becomes T2001. Otherwise T1.
+  if (!trees.length) { const f = (job && job.firstTag) ? String(job.firstTag).trim().toUpperCase() : "T1"; return /^\d+$/.test(f) ? "T" + f : f; }
   const last = [...trees].sort((a, b) => (a.created || 0) - (b.created || 0)).pop();
   const lastP = tagKey(last.tag)[0], single = roadside(job) || lastP === "T" || lastP === "";
-  // single trees keep the survey's own style (v1.90), whatever the last tree happened to be tagged: plain numbers or
-  // T, whichever most of its single trees already have. Where they are level, the starting tag decides (2001 = plain,
-  // T2001 = T); with no starting tag, T on a roadside / PROW survey, otherwise the last tree's letter. After a G, H or W
-  // the same letter carries on as before.
-  const prefix = !single ? lastP : plainStyle(trees, job) ? "" : tagStyleT(trees, job) ? "T" : firstLetter(job) || (roadside(job) ? "T" : lastP);
-  // plain numbers and T tags are one number series (no 1609 beside T1609); roadside / PROW: one series across T and TG
+  // after a single tree the next is a T, whatever the last one happened to be tagged; after a G, H or W the same
+  // letter carries on. Plain numbers and T tags are one number series (no T1609 beside 1609); roadside / PROW: one
+  // series across T and TG (T1, T2, TG3, T4 …)
+  const prefix = single ? "T" : lastP;
   const max = Math.max(0, ...trees.map(t => tagKey(t.tag)).filter(k => roadside(job) || (single ? k[0] === "T" || k[0] === "" : k[0] === prefix)).map(k => k[1]));
   return prefix + (max + 1);
 }
-const tagCount = (trees, p) => trees.filter(t => tagKey(t.tag)[1] && tagKey(t.tag)[0] === p).length;
-const plainStyle = (trees, job) => { const a = tagCount(trees, ""), b = tagCount(trees, "T"); return a > b || (a === b && plainTags(job)); };  // single trees carry no letter
-const tagStyleT = (trees, job) => tagCount(trees, "T") > tagCount(trees, "");
-const plainTags = job => !!(job && /^\d+$/.test(String(job.firstTag || "").trim()));          // starting tag 2001: no letter on single trees
-const firstLetter = job => job && job.firstTag ? tagKey(String(job.firstTag).trim().toUpperCase())[0] : "";
 
 // metres between two [lat, lon] points (good enough for a hedge length)
 // area in m² of a ring of [lat, lon] points (British National Grid, shoelace)
@@ -887,7 +881,7 @@ async function treePage(jobId, treeId) {
     <div class="grid2" style="align-items:end">
       <div><label for="f_tag">Tag</label><input id="f_tag" data-f="tag" value="${esc(t.tag)}" autocapitalize="characters" autocomplete="off"></div>
       <div><label for="f_oldTag">Existing tag on the tree</label><input id="f_oldTag" data-f="oldTag" value="${esc(t.oldTag || "")}" placeholder="if it has one" autocapitalize="characters" autocomplete="off"></div>
-      <div class="chips" id="prefix" style="padding-bottom:4px">${(roadside(job) ? ["T", "TG", "W"] : ["T", "G", "H", "W"]).map(p => `<button class="chip" data-p="${p}">${p === "T" && plainStyle(all.filter(x => x.id !== t.id), job) ? "Tree no." : p}${PREFIX_WORD[p] ? ` <span style="font-weight:400">${PREFIX_WORD[p]}</span>` : ""}</button>`).join("")}</div>
+      <div class="chips" id="prefix" style="padding-bottom:4px">${(roadside(job) ? ["T", "TG", "W"] : ["T", "G", "H", "W"]).map(p => `<button class="chip" data-p="${p}">${p}${PREFIX_WORD[p] ? ` <span style="font-weight:400">${PREFIX_WORD[p]}</span>` : ""}</button>`).join("")}</div>
     </div>
     <div id="dupe" class="warn" hidden>Another tree in this survey already has this tag.</div>
 
@@ -1066,6 +1060,10 @@ async function treePage(jobId, treeId) {
     if (!dirty) return;
     stampTime();
     t.tag = (t.tag || "").trim().toUpperCase();
+    if ((t.defects || []).length) {   // v1.91: the observations are the record – details whose sentence has been deleted or rewritten are dropped
+      const flat = x => String(x || "").toLowerCase().replace(/[.\s]+/g, " ").trim(), obs = flat(t.comments);
+      t.defects = t.defects.filter(x => !x.text || obs.includes(flat(x.text)));
+    }
     t.updated = Date.now();
     await DB.put("trees", t);
     job.updated = Date.now(); await DB.put("jobs", job);
@@ -1316,8 +1314,7 @@ async function treePage(jobId, treeId) {
   };
   $("#prefix").onclick = e => {  // T / G / H / W: next free number with that letter
     const b = e.target.closest(".chip"); if (!b) return;
-    // on a survey numbered without letters the T chip gives the next plain number, so 1609 never sits beside T1609 (v1.90)
-    const p0 = b.dataset.p, p = p0 === "T" && plainStyle(all.filter(x => x.id !== t.id), job) ? "" : p0, fam = x => x === "T" ? "" : x;
+    const p0 = b.dataset.p, p = p0, fam = x => x === "T" ? "" : x;   // T and plain numbers are one series
     const nums = all.filter(x => x.id !== t.id && fam(tagKey(x.tag)[0]) === fam(p)).map(x => tagKey(x.tag)[1]);
     // pre-numbered tags (a starting number is set): carry on the same number series; otherwise G1, H1…
     const allNums = all.filter(x => x.id !== t.id).map(x => tagKey(x.tag)[1]);

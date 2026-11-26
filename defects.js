@@ -165,12 +165,17 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
     }
     return bits.join("; ");
   };
+  let unitChosen = false, unitAuto = false, unitWas = "";
   const update = () => {
     d.name = $s("#ds_name").value;
     const hs = $s("#ds_h").value.trim().replace(/,/g, ".").split(/\s+|\s*(?:-|–|to)\s*/).filter(Boolean);  // "1.5 4" in the first box is a range too
     d.height = hs[0] || ""; d.height2 = $s("#ds_h2").value.trim().replace(",", ".") || hs[1] || "";
     d.size = $s("#ds_size").value.trim().replace(/(\d)\s+(\d)/g, "$1 x $2");
     const lean = /\blean/i.test(d.name);
+    if (!unitChosen && (lean ? d.unit !== "°" : d.unit === "°" && unitAuto)) {   // nobody has tapped a unit: degrees for a lean, back to the usual unit otherwise
+      if (lean) { unitWas = d.unit; d.unit = "°"; unitAuto = true; } else { d.unit = unitWas || UNITS[0][0]; unitAuto = false; }
+      $s("#ds_unit").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.v === d.unit));
+    }
     $s("#ds_part").closest("div").style.opacity = lean ? 0.4 : 1;
     $s("#ds_union").hidden = !UNION_RE.test(d.name); $s("#ds_cav").hidden = !CAVITY_RE.test(d.name);
     u.a = +$s("#ds_ua").value || null; u.b = +$s("#ds_ub").value || null; u.bulge = $s("#ds_bulge").checked;
@@ -194,6 +199,7 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
     update();
   };
   single("#ds_asp", "aspect"); single("#ds_unit", "unit");
+  $s("#ds_unit").addEventListener("click", e => { if (e.target.closest(".chip")) unitChosen = true; }, true);
   if (opts.choice) single("#ds_choice", "choice");
   $s("#ds_part").onclick = e => {  // tap one or several places
     const b = e.target.closest(".chip"); if (!b) return;
