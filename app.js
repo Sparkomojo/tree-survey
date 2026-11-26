@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.94";
+const APP_VERSION = "1.95";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -377,11 +377,18 @@ async function homePage() {
   const oldest = atRisk.length ? Math.min(...atRisk.map(j => j.exported || j.created || Date.now())) : 0;
   const hrs = oldest ? Math.floor((Date.now() - oldest) / 3600000) : 0;
   const ideas = FEEDBACK ? ((await DB.get("settings", "ideas")) || { items: [] }).items : [];
+  // a reminder to back up (v1.95): the last backup is 3 or more days old and a survey with trees has changed since –
+  // or none has ever been made and there are trees on the device. Never shown for works orders only.
+  const BACKUP_DAYS = 3, lastBackup = st_.lastBackup || 0;
+  const backupChanged = jobs.filter(j => count(j.id) && (j.updated || 0) > lastBackup).length;
+  const backupDays = lastBackup ? Math.floor((Date.now() - lastBackup) / 86400000) : null;
+  const backupDue = !worksOnly && backupChanged > 0 && (lastBackup ? backupDays >= BACKUP_DAYS : true);
   app.innerHTML = `
   <header class="top"><h1><img src="icons/favicon-48.png" alt="" class="hlogo">Tree Survey</h1><button aria-label="Settings" onclick="go('#/settings')">⚙</button></header>
   <main>
     ${atRisk.length && hrs >= 3 ? `<div class="warn" id="exportWarn">⚠ ${atRisk.length === 1 ? `<b>${esc(atRisk[0].site || "A survey")}</b> has` : `<b>${atRisk.length} surveys</b> have`} work that has not been exported${hrs >= 3 ? ` for ${hrs >= 48 ? Math.floor(hrs / 24) + " days" : hrs + " hours"}` : ""}. This device holds the only copy – open the survey and tap <b>Export</b>.</div>` : ""}
-    ${!safe && jobs.length ? `<div class="warn" id="storeWarn">⚠ This browser has not agreed to protect the app's data from automatic clean-up. ${installed() ? "Export your surveys regularly." : "<b>Install the app</b> (the button at the bottom of this page, or the browser's menu → Install / Add to Home Screen) and export your surveys regularly."}</div>` : ""}
+    ${backupDue ? `<div class="warn" id="backupWarn">⚠ ${lastBackup ? `The last backup of this device was <b>${backupDays} days ago</b>, and ${backupChanged === 1 ? "a survey has" : backupChanged + " surveys have"} changed since.` : `No backup of this device has been made yet.`} <a href="#/backup"><b>Back up all surveys</b></a> – one file, saved to OneDrive, that another phone or tablet can open.</div>` : ""}
+        ${!safe && jobs.length ? `<div class="warn" id="storeWarn">⚠ This browser has not agreed to protect the app's data from automatic clean-up. ${installed() ? "Export your surveys regularly." : "<b>Install the app</b> (the button at the bottom of this page, or the browser's menu → Install / Add to Home Screen) and export your surveys regularly."}</div>` : ""}
     ${worksOnly ? "" : `<button class="btn primary block" onclick="go('#/new')">＋ New site survey</button>
     <button class="btn block" style="margin-top:8px" onclick="go('#/quote/new')">📷 ＋ Quote visit – photos, works, crew and kit</button>
     <button class="btn block" style="margin-top:8px" onclick="go('#/notes')">📝 Route notes – daily site note (PDF)</button>`}
