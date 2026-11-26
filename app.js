@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.92";
+const APP_VERSION = "1.93";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -869,8 +869,18 @@ async function treePage(jobId, treeId) {
   const f = (k, lab, attrs = "") => `<div><label for="f_${k}">${lab}</label><input id="f_${k}" data-f="${k}" value="${esc(t[k] ?? "")}" ${attrs}></div>`;
   const num = (k, lab) => f(k, lab, 'inputmode="decimal" autocomplete="off"');
   const pick = (k, opts) => `<div class="chips" data-pick="${k}">${opts.map(o => `<button class="chip ${t[k] === o ? "on" : ""}" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div>`;
+  // Observations (v1.93): a short "most used" row, then the part of the tree – only that part's defects are shown
+  const obsAreas = defectAreas(s.phrases.obs);
+  const obsChip = (name, part, small) => `<button class="chip${small ? " small" : ""}" data-ob="${esc(name)}" data-part="${esc(part)}">${esc(name)}</button>`;
+  const obsPick = () => `<div id="obsPick">
+      <div class="hint" style="margin:6px 0 2px">Most used</div>
+      <div class="chips" id="obsUsed">${defectUsed(s, obsAreas).map(u => obsChip(u.name, u.part)).join("")}</div>
+      <div class="hint" style="margin:8px 0 2px">Or pick the part of the tree</div>
+      <div class="chips" id="obsAreas">${obsAreas.map(a => `<button class="chip" data-area="${a.key}">${esc(a.name)}</button>`).join("")}</div>
+      <div class="chips" id="obsItems" style="display:none;margin-top:6px;padding:8px;border-left:3px solid var(--line, #cfd8d3)"></div>
+    </div>`;
   const ta = (k, lab, phrases) => `<label for="f_${k}">${lab}</label><textarea id="f_${k}" data-f="${k}">${esc(t[k] ?? "")}</textarea>
-    <div class="chips phr">${phrases.map(p => `<button class="chip" data-add="f_${k}"${k === "comments" ? " data-detail" : ""}>${esc(p)}</button>`).join("")}</div>
+    ${k === "comments" ? obsPick() : `<div class="chips phr">${phrases.map(p => `<button class="chip" data-add="f_${k}">${esc(p)}</button>`).join("")}</div>`}
     ${k === "comments" ? `<div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="btn small" id="addDead">Dead</button><button class="btn small" id="addDefect">＋ Defect / feature</button><button class="btn small" id="addFungus">🍄 Fungus / disease</button><button class="btn small" id="addPest">🐛 Pest / disease</button></div>` : ""}`;
 
   app.innerHTML = `
@@ -1251,7 +1261,23 @@ async function treePage(jobId, treeId) {
     const name = b.textContent.trim(), pick = adbChoice(name);
     defectSheet(name, s.phrases.obs, (text, details) => { adbApply(pick, details); addObs(text, details); }, { dbh: stemDia(), choice: pick });
   });
-  $("#addDefect").onclick = e => { e.preventDefault(); defectSheet("", s.phrases.obs, addObs, { dbh: stemDia() }); };
+  // what this device picks most is counted, for the "most used" row
+  const obsUsed = name => { if (!name) return; s.defectUse = s.defectUse || {}; s.defectUse[name] = (s.defectUse[name] || 0) + 1; DB.put("settings", s).catch(() => {}); };
+  const pickObs = (name, part) => {
+    const pick = adbChoice(name);
+    if (s.askDetails === false || DEFECT_PLAIN.test(name)) { obsUsed(name); return addObs(name, null); }   // said as it stands
+    defectSheet(name, s.phrases.obs, (text, details) => { obsUsed(name); adbApply(pick, details); addObs(text, details); }, { dbh: stemDia(), choice: pick, part });
+  };
+  if ($("#obsPick")) $("#obsPick").onclick = e => {
+    const a = e.target.closest("[data-area]"), b = e.target.closest("[data-ob]");
+    if (a) {
+      e.preventDefault();
+      const on = !a.classList.contains("on"), ar = obsAreas.find(x => x.key === a.dataset.area), box = $("#obsItems");
+      $("#obsAreas").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", on && c === a));
+      box.style.display = on ? "" : "none"; box.innerHTML = on ? ar.items.map(i => obsChip(i, ar.partOf(i), true)).join("") : "";
+    } else if (b) { e.preventDefault(); pickObs(b.dataset.ob, b.dataset.part || ""); }
+  };
+  $("#addDefect").onclick = e => { e.preventDefault(); defectSheet("", s.phrases.obs, (text, details) => { obsUsed(details && details.name); addObs(text, details); }, { dbh: stemDia() }); };
   // one tap: "Dead." goes at the front of the observations (no details panel)
   $("#planCol").onclick = e => {   // a colour for this tree on the map and plans; Automatic clears it
     const b = e.target.closest(".chip"); if (!b) return;

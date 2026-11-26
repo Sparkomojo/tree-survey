@@ -20,25 +20,70 @@ const UNITS = [["mm", "mm"], ["mm Ø", "mm diameter"], ["cm", "cm"], ["m", "m"],
 const aspectWord = a => (ASPECTS.find(x => x[0] === a) || [, ""])[1];
 
 // Defect / feature library, in sections (Mark's lists + Lonsdale, Hazards from Trees, 2000 – terms only)
-const DEFECT_SECTIONS = [
-  ["Roots / stability", ["Leaning tree", "Severe root damage", "Soil cracking and heaving", "Root plate lifting",
-    "Fungi at root plate", "Historical grade change", "Butt swell", "Restricted rooting", "Recently exposed",
-    "Windthrow history on site", "Excessive sway in wind", "Root collar buried"]],
-  ["Stem / scaffold limbs", ["Cavity", "Decay", "Basal cavity", "Exudation", "Fungi on stem", "Bark shedding",
-    "Bark congestion", "Natural bracing", "Poor stem taper", "Bifurcation", "Included union", "Co-dominant stems",
-    "Structural crack", "Rib – blunt-nosed (occluded crack)", "Rib – sharp-nosed (open crack)", "Split below union",
-    "Buckling bulge", "Target canker", "Graft incompatibility", "Stem fluting", "Wound – skinning",
-    "Wound – scored or splintered", "Dog-leg bend at old wound", "Multiple pruning wounds", "Old topping points",
-    "Slender stem (high H/D)", "Reaction wood"]],
-  ["Crown / canopy", ["Deadwood", "Hanging branch", "Broken or snapped branches", "Limb sinking", "Crack on underside of limb",
-    "Gap in crown", "End-loaded / lion-tailed limbs", "Over-extended limb", "Crossing branches", "Neglected pollard",
-    "Branches attached around topping snag", "Tear-out wound", "Codominant stems diverging to height",
-    "Climbing plants", "Ivy cover", "Loose or detaching bark", "Asymmetric crown", "Epicormic growth"]],
-  ["Vitality", ["Crown dieback", "Upper crown / twig dieback", "Sub-optimal shoot extension", "Low crown density",
-    "Sparse or small foliage", "Small leaf size", "Yellowing (chlorotic) foliage", "Premature leaf fall", "Defoliation"]],
-  ["Insects & invertebrates", ["Defoliating insects", "Oak processionary moth nests", "Horse chestnut leaf miner",
-    "Bark beetle exit holes", "Wood-boring insect activity", "Ant activity in decay", "Wasp / bee nest"]],
+// Defects and features by the part of the tree they are on (v1.93, Mark, 26 Nov 2026: "too many options … isolate them
+// to different areas of the tree, such as root / stem interface, stem, canopy"). The quick phrases that used to sit in
+// one long row under Observations and this library are one list now. Unions are an area of their own AND the main
+// three are under Stem (Mark: "maybe both would be better"). [key, name, where a defect picked here usually is, items]
+// (Mark's lists + Lonsdale, Hazards from Trees, 2000 – terms only)
+const DEFECT_AREAS = [
+  ["root", "Root / stem interface", "Root plate", ["Basal cavity", "Butt swell", "Fungi at root plate", "Root plate lifting",
+    "Soil cracking and heaving", "Severe root damage", "Root collar buried", "Restricted rooting", "Historical grade change",
+    "Recently exposed", "Leaning tree"]],
+  ["stem", "Stem", "Stem", ["Cavity", "Decay", "Exudation", "Fungi on stem", "Bracket fungi", "Stem wound", "Wound – skinning",
+    "Wound – scored or splintered", "Bark damage", "Bark shedding", "Loose or detaching bark", "Structural crack",
+    "Rib – blunt-nosed (occluded crack)", "Rib – sharp-nosed (open crack)", "Buckling bulge", "Target canker",
+    "Graft incompatibility", "Stem fluting", "Dog-leg bend at old wound", "Multiple pruning wounds", "Old topping points",
+    "Poor stem taper", "Slender stem (high H/D)", "Reaction wood", "Included union", "Co-dominant stems", "Bifurcation"]],
+  ["union", "Unions", "Main union", ["Included union", "Co-dominant stems", "Bifurcation", "Natural bracing", "Bark congestion",
+    "Split below union", "Codominant stems diverging to height", "Branches attached around topping snag"]],
+  ["crown", "Crown", "Crown", ["Minor deadwood", "Major deadwood", "Deadwood", "Hanging branch", "Broken or snapped branches",
+    "Storm damage", "Tear-out wound", "Limb sinking", "Crack on underside of limb", "Over-extended limb",
+    "End-loaded / lion-tailed limbs", "Crossing branches", "Gap in crown", "Asymmetric crown", "Epicormic growth",
+    "Neglected pollard", "Ivy cover", "Climbing plants"]],
+  ["vital", "Foliage / vitality", "", ["Crown dieback", "Upper crown / twig dieback", "Sparse crown", "Low crown density",
+    "Sparse or small foliage", "Small leaf size", "Sub-optimal shoot extension", "Yellowing (chlorotic) foliage",
+    "Premature leaf fall", "Defoliation"]],
+  ["whole", "Whole tree / other", "", ["No significant defects observed", "Leaning tree", "Excessive sway in wind",
+    "Windthrow history on site", "Previously pollarded", "Previously reduced", "Suppressed", "Self-set",
+    "Previously laid (hedge)", "Stems removed from hedgerow", "Defoliating insects", "Oak processionary moth nests",
+    "Horse chestnut leaf miner", "Bark beetle exit holes", "Wood-boring insect activity", "Ant activity in decay",
+    "Wasp / bee nest"]],
 ];
+// where on the tree, when it is not simply the area's own place
+const DEFECT_PART = { "Included union": "Main union", "Co-dominant stems": "Main union", "Bifurcation": "Main union",
+  "Butt swell": "Base", "Limb sinking": "Scaffold limb", "Crack on underside of limb": "Scaffold limb",
+  "Over-extended limb": "Scaffold limb", "End-loaded / lion-tailed limbs": "Scaffold limb", "Leaning tree": "",
+  "Historical grade change": "", "Restricted rooting": "", "Recently exposed": "", "Neglected pollard": "",
+  "Old topping points": "", "Codominant stems diverging to height": "", "Branches attached around topping snag": "" };
+// quick phrases that say the same as a library term – the library's wording is the one offered
+const DEFECT_SAME = { "lean": "Leaning tree", "root plate heave": "Root plate lifting" };
+// said as they stand: no place, size or direction to ask for
+const DEFECT_PLAIN = /^(no significant|previously |suppressed$|self-set$|stems removed)/i;
+// the "most used" row before this device has a history of its own
+const DEFECT_START = ["No significant defects observed", "Minor deadwood", "Major deadwood", "Ivy cover", "Cavity", "Included union"];
+// The areas with the surveyor's own phrases (Settings → Observation phrases, or the PC's wording) added to the area their
+// words point to – anything that names no part goes under Whole tree / other, so nothing typed there is lost.
+// -> [{ key, name, part, items, partOf(name) }]
+function defectAreas(own) {
+  const areas = DEFECT_AREAS.map(([key, name, part, items]) => ({ key, name, part, items: items.slice() }));
+  const have = new Set(areas.flatMap(a => a.items.map(i => i.toLowerCase())));
+  const guess = p => /root|basal|\bbase\b|buttress/i.test(p) ? "root" : /union|fork/i.test(p) ? "union" : /stem|trunk|bark|bole/i.test(p) ? "stem"
+    : /leaf|leaves|foliage|dieback|vigour|vitality|bud/i.test(p) ? "vital" : /crown|branch|limb|deadwood|canopy|pollard/i.test(p) ? "crown" : "whole";
+  for (const p of own || []) {
+    const k = String(p || "").trim(); if (!k || have.has(k.toLowerCase()) || DEFECT_SAME[k.toLowerCase()]) continue;
+    areas.find(a => a.key === guess(k)).items.push(k); have.add(k.toLowerCase());
+  }
+  const says = (name, part) => { const n = name.toLowerCase(); return { "Root plate": /root|basal|base\b/, "Base": /basal|base\b|butt/, "Stem": /stem/, "Main union": /union|bifurcation/, "Crown": /crown|deadwood|ivy|climbing/ }[part]?.test(n); };
+  for (const a of areas) a.partOf = name => name in DEFECT_PART ? DEFECT_PART[name] : /\blean/i.test(name) || DEFECT_PLAIN.test(name) || says(name, a.part) ? "" : a.part;
+  return areas;
+}
+// the handful this device picks most, topped up from DEFECT_START -> [{ name, part }]
+function defectUsed(s, areas, n = 6) {
+  const all = new Map(); areas.forEach(a => a.items.forEach(i => { if (!all.has(i)) all.set(i, a.partOf(i)); }));
+  const use = (s && s.defectUse) || {};
+  const names = Object.keys(use).filter(k => all.has(k)).sort((x, y) => use[y] - use[x]).concat(DEFECT_START);
+  return names.filter((x, i) => names.indexOf(x) === i && all.has(x)).slice(0, n).map(name => ({ name, part: all.get(name) }));
+}
 const UNION_RE = /\b(union|fork|bifurcation|co-?dominant)/i;
 const CAVITY_RE = /\b(cavity|hollow|decay)/i;
 const UNION_TYPES = [["Normal", "normally formed union"], ["Embedded bark", "union with embedded (occluded) bark"],
@@ -119,8 +164,8 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
     ${opts.choice ? `<label>${esc(opts.choice.label)}</label>
       <div class="chips" id="ds_choice">${opts.choice.options.map(o => `<button class="chip ${o === d.choice ? "on" : ""}" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}
     ${name ? `<button class="btn block" id="ds_plain" style="margin-top:8px">Add “${esc(name)}” without details</button>` :
-      `<div class="ds-lib">${DEFECT_SECTIONS.map(([sec, items]) => `<details><summary>${esc(sec)}</summary>
-        <div class="chips">${items.map(i => `<button class="chip small" data-lib="${esc(i)}">${esc(i)}</button>`).join("")}</div></details>`).join("")}</div>`}
+      `<div class="ds-lib">${defectAreas(phrases).map(a => `<details><summary>${esc(a.name)}</summary>
+        <div class="chips">${a.items.map(i => `<button class="chip small" data-lib="${esc(i)}" data-part="${esc(a.partOf(i))}">${esc(i)}</button>`).join("")}</div></details>`).join("")}</div>`}
     <div id="ds_union" hidden>
       <label>Union type</label><div class="chips" id="ds_ut">${UNION_TYPES.map(u => `<button class="chip small" data-v="${u[0]}">${u[0]}</button>`).join("")}</div>
       <div class="ds-row"><div><label for="ds_ua">Stem A dia (mm)</label><input id="ds_ua" inputmode="decimal" autocomplete="off"></div>
@@ -218,7 +263,11 @@ function defectSheet(name, phrases, onAdd, opts = {}) {
   const lib = $s(".ds-lib");
   if (lib) lib.onclick = e => {
     const b = e.target.closest("[data-lib]"); if (!b) return; e.preventDefault();
-    $s("#ds_name").value = b.dataset.lib; lib.querySelectorAll("details").forEach(x => x.open = false); update();
+    $s("#ds_name").value = b.dataset.lib; lib.querySelectorAll("details").forEach(x => x.open = false);
+    if (b.dataset.part && !partList(d.part).length) {   // the area it was picked from says where it is, unless a place is already chosen
+      d.part = b.dataset.part; $s("#ds_part").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", partList(d.part).includes(c.dataset.v)));
+    }
+    update();
   };
   d.part = partList(d.part).join(", ");
   $s("#ds_part").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", partList(d.part).includes(c.dataset.v)));
