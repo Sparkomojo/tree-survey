@@ -212,11 +212,12 @@ function pointInRing(pt, ring) {
   return inside;
 }
 // the zone (polygon name) a position falls in, from the job's layers
+const layHasBands = lay => !!(lay && lay.geojson && (lay.geojson.features || []).some(f => f && f.properties && f.properties.band));
 function zoneFor(job, lat, lon) {
   if (lat == null || lat === "") return "";
   const pt = [+lon, +lat];
   for (const lay of job.layers || []) {
-    if (lay.zones === false || lay.kind === "image") continue;
+    if ((lay.zones === false && !layHasBands(lay)) || lay.kind === "image") continue;   // usage zones (bands) always count
     for (const f of lay.geojson.features || []) {
       const g = f.geometry || {};
       const polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
@@ -598,7 +599,7 @@ async function layersPage(jobId) {
   <main>
     <p class="hint">Add survey zones, site boundaries, routes or target points as <b>GeoJSON</b> or <b>KML</b> (Google Earth), or an aerial photo / drone map made on the PC with <b>Aerial image → phone</b>. Each layer has a tick to show it on the map or switch it off (it stays here, and its areas still name the trees' zones) and a slider for how strongly it shows. Shapefiles: convert them on the PC with <b>Map layers</b> (Import survey folder) or in QGIS. Trees take the name of the zone they stand in.</p>
     ${ls.map(l => `<div class="card"><div class="name">${esc(l.name)}</div><div class="meta">${l.kind === "image" ? "Aerial image" + (l.sharp ? ` – sharper, in ${l.pieces || "several"} pieces` : "") : (l.geojson.features || []).length + " shapes"}${l.credit ? " · " + esc(l.credit) : ""}</div>
-      ${l.kind === "image" ? "" : `<label class="check"><input type="checkbox" data-z="${l.id}" ${l.zones !== false ? "checked" : ""}> Use its areas as zones for trees</label>`}
+      ${l.kind === "image" ? "" : layHasBands(l) ? `<div class="hint">Usage zones – each tree takes the band it stands in.</div>` : `<label class="check"><input type="checkbox" data-z="${l.id}" ${l.zones !== false ? "checked" : ""}> Use its areas as zones for trees</label>`}
       <label class="check"><input type="checkbox" data-show="${l.id}" ${layerShown(l) ? "checked" : ""}> Show on the map</label>
       <label for="lo_${l.id}">Show on the map at <b data-pc="${l.id}">${Math.round(layerStrength(l) * 100)}%</b></label><input id="lo_${l.id}" data-op="${l.id}" type="range" min="0.2" max="1" step="0.05" value="${layerStrength(l)}" style="display:block;width:100%;margin:4px 0 10px">
       <button class="btn small danger" data-del="${l.id}">Remove</button></div>`).join("") || `<div class="empty">No layers yet.</div>`}

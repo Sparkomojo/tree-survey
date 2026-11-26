@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.88";
+const APP_VERSION = "1.89";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -77,6 +77,34 @@ const today = () => new Date().toISOString().slice(0, 10);
 const ukDate = iso => iso ? iso.split("-").reverse().join("/") : "";
 const safeName = s => String(s || "").replace(/[\\/:*?"<>|#%]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 80);
 const tagKey = t => { const m = /^([A-Za-z]*)\s*(\d+)(.*)$/.exec(t || ""); return m ? [m[1].toUpperCase(), +m[2], m[3]] : [String(t || ""), 0, ""]; };
+// ---- groups recorded tree by tree (v1.89): single trees, each with its own tag and record, that belong together – a
+// linear group (row, line, avenue) or any other group (clump, stand). A tick on the tree (t.grp), the kind (t.grpKind:
+// "Linear" or "Group") and an optional name (t.grpName, e.g. "LG1" or "lime avenue"). The tick alone is enough.
+const GRP_KINDS = [["Linear", "Linear – row, line or avenue"], ["Group", "Group – clump or stand"]];
+const grpKind = t => t && t.grp ? (t.grpKind === "Group" ? "Group" : "Linear") : "";
+const grpName = t => t && t.grp ? String(t.grpName || "").trim() : "";
+const grpWord = k => k === "Group" ? "Tree group" : "Linear group";
+const grpCell = t => t && t.grp ? (grpName(t) || "Yes") : "";              // the export's Part Of Group column
+const grpSame = (t, kind, name) => !!(t && t.grp) && grpKind(t) === kind && grpName(t).toLowerCase() === String(name || "").trim().toLowerCase();
+// "T22 to T44, T50" – runs of tags that follow on from each other (same letters, numbers one apart)
+function tagRuns(tags) {
+  const ks = [...new Set(tags.map(x => String(x || "").trim().toUpperCase()).filter(Boolean))].map(x => [x, tagKey(x)])
+    .sort((a, b) => a[1][0] < b[1][0] ? -1 : a[1][0] > b[1][0] ? 1 : a[1][1] - b[1][1] || (a[1][2] < b[1][2] ? -1 : 1));
+  const runs = [];
+  for (const [tag, k] of ks) {
+    const r = runs[runs.length - 1];
+    if (r && !k[2] && !r.suffix && r.prefix === k[0] && k[1] === r.lastNum + 1) { r.last = tag; r.lastNum = k[1]; r.n++; }
+    else runs.push({ first: tag, last: tag, prefix: k[0], lastNum: k[1], suffix: k[2], n: 1 });
+  }
+  return runs.map(r => r.n === 1 ? r.first : r.n === 2 ? r.first + ", " + r.last : r.first + " to " + r.last).join(", ");
+}
+// every such group of a survey: [{ kind, name, trees }] – linear first, named before unnamed, in name order
+function grpList(trees) {
+  const m = new Map();
+  for (const t of trees) if (t.grp) { const k = grpKind(t) + "|" + grpName(t).toLowerCase(); if (!m.has(k)) m.set(k, { kind: grpKind(t), name: grpName(t), trees: [] }); m.get(k).trees.push(t); }
+  return [...m.values()].sort((a, b) => (a.kind === "Group") - (b.kind === "Group") || !a.name - !b.name || a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+const grpTitle = g => g.name ? `${g.name} (${grpWord(g.kind).toLowerCase()})` : `${grpWord(g.kind)} – no name given`;
 const byTag = (a, b) => { const x = tagKey(a.tag), y = tagKey(b.tag); return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] - y[1] || (x[2] < y[2] ? -1 : 1); };
 const common = sp => { const p = String(sp || "").split(/\s+[-–]\s+/); return p[1] || p[0] || ""; };
 
@@ -207,6 +235,7 @@ async function route() {
     if (h[0] === "job" && h[2] === "nestcheck") return await nestCheckPage(h[1]);
     if (h[0] === "job" && h[2] === "trees") return await jobPage(h[1], true);
     if (h[0] === "job" && h[2] === "table") return await tablePage(h[1]);
+    if (h[0] === "job" && h[2] === "groups") return await groupsPage(h[1]);
     if (h[0] === "job" && h[2] === "details") return await detailsPage(h[1]);
     if (h[0] === "job" && h[2] === "photos") return await sitePhotosPage(h[1]);
     if (h[0] === "job" && h[2] === "map") return await mapPage(h[1], h[3] || "browse", h[4]);
@@ -542,6 +571,7 @@ async function jobPage(id, treesOnly) {
       <button class="btn small" onclick="go('#/job/${id}/photos')">📷 Photos (${sitePc})</button>
       <button class="btn small" onclick="go('#/job/${id}/map')">🗺 Map</button>
       ${trees.length ? `<button class="btn small" onclick="go('#/job/${id}/table')">▦ Table</button>` : ""}
+      ${trees.length ? `<button class="btn small" onclick="go('#/job/${id}/groups')">↔ Groups by tree${trees.some(t => t.grp) ? ` (${grpList(trees).length})` : ""}</button>` : ""}
       <button class="btn small green" onclick="exportJob('${id}')">⇪ Export</button>
       ${trees.length ? `<button class="btn small" onclick="resurvey('${id}')">↻ Re-survey</button>` : ""}
       ${bo.nest && job.type !== "NEST" ? `<button class="btn small" onclick="go('#/job/${id}/feat/nest/new')">🐦 ＋ Nest (${feats.filter(f => f.kind === "nest").length})</button>` : ""}
@@ -555,7 +585,7 @@ async function jobPage(id, treesOnly) {
         <div class="tag ${job.type === "BS5837" && t.category ? t.category[0] : ""}">${esc(t.tag)}</div>
         <div class="info">
           <div class="name">${t.urgent ? '<span class="no">⚠ </span>' : ""}${esc(common((t.speciesMore || [])[0] || t.species) || "Species?")}${(t.speciesMore || []).length ? ` +${t.speciesMore.length - (t.species ? 0 : 1)}` : ""}${job.type === "BS5837" && t.category ? ` · ${esc(t.category)}` : ""}${t.estimated ? " · est." : ""}</div>
-          <div class="meta">${[t.height && `H ${esc(t.height)} m`, t.dbh && `DBH ${esc(t.dbh)}`, pc(t.id) && `📷 ${pc(t.id)}`].filter(Boolean).join(" · ")}
+          <div class="meta">${[t.height && `H ${esc(t.height)} m`, t.dbh && `DBH ${esc(t.dbh)}`, pc(t.id) && `📷 ${pc(t.id)}`, t.grp && `↔ ${esc(grpName(t) || grpWord(grpKind(t)).toLowerCase())}`].filter(Boolean).join(" · ")}
             ${t.lat ? `<span class="ok">· 📍</span>` : `<span class="no">· no GPS</span>`}</div>
           <div class="rec">${esc(t.recs || t.comments || "")}</div>
         </div></a>`).join("") || `<div class="empty">No trees yet.<br>Stand by the first tree and tap <b>＋ Tree</b>.</div>`}</div>
@@ -630,6 +660,63 @@ function startGps(onFix, onState) {
 // ------------------------------------------------------------------ table of the survey's trees, editable in place
 // Every tree on one scrolling sheet, in the order recorded. A cell saves as soon as you leave it; the tag opens the
 // tree's full page (position, photos, defects panel, risk). The same data as the tree pages – nothing is kept twice.
+// Groups recorded tree by tree (v1.89): what each group holds, and a run of trees already recorded put into (or taken
+// out of) a group in one go
+async function groupsPage(jobId) {
+  const job = await DB.get("jobs", jobId);
+  if (!job) return go("#/");
+  const trees = (await DB.by("trees", "job", jobId)).sort(byTag);
+  const groups = grpList(trees);
+  let kind = "Linear";
+  app.innerHTML = `
+  <header class="top"><button aria-label="Back to tree list" onclick="go('#/job/${jobId}')">‹</button>
+    <h1>Groups by tree<span class="sub">${esc(job.site)}</span></h1></header>
+  <main>
+    <p class="hint">For trees that belong together but are each recorded on their own – a row, line or avenue, or a clump or stand. Each tree keeps its own tag and record; the report says which group it is part of and lists the trees in each group. (A group recorded as one entry is still a <b>G</b> tag.)</p>
+    <h2>In this survey</h2>
+    <div id="grpGroups">${groups.map(g => `<div class="card"><div class="status"><div class="big">${esc(grpTitle(g))}</div>
+      <div class="meta">${esc(tagRuns(g.trees.map(t => t.tag)))} · ${g.trees.length} tree${g.trees.length === 1 ? "" : "s"}</div></div></div>`).join("") || `<div class="empty">No tree is marked as part of a group yet.</div>`}</div>
+    <h2>Add a run of trees</h2>
+    <div class="chips" id="gp_kind">${GRP_KINDS.map(([v, l]) => `<button class="chip ${v === kind ? "on" : ""}" data-v="${v}">${esc(l)}</button>`).join("")}</div>
+    <div><label for="gp_name">Group name or number (optional)</label><input id="gp_name" list="gp_list" placeholder="e.g. LG1, or lime avenue" autocomplete="off">
+      <datalist id="gp_list">${groups.filter(g => g.name).map(g => `<option value="${esc(g.name)}">`).join("")}</datalist></div>
+    <div class="grid2"><div><label for="gp_from">From tag</label><input id="gp_from" placeholder="e.g. T22" autocapitalize="characters" autocomplete="off"></div>
+      <div><label for="gp_to">To tag</label><input id="gp_to" placeholder="e.g. T44" autocapitalize="characters" autocomplete="off"></div></div>
+    <div class="hint" id="gp_count"></div>
+    <div class="row"><button class="btn small primary" id="gp_add">Add these trees to the group</button><button class="btn small" id="gp_out">Take these trees out</button></div>
+    <p class="hint">Every tree of this survey whose tag falls in the run is included (T22 to T44 takes T22, T23 … T44 – not G or W tags). For one tree, use the tick on its own page.</p>
+  </main>`;
+  $("#gp_kind").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; e.preventDefault(); kind = b.dataset.v;
+    $("#gp_kind").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.v === kind)); };
+  const picked = () => {
+    const from = $("#gp_from").value.trim(), to = $("#gp_to").value.trim() || from;
+    if (!from) return null;
+    const a = tagKey(from), b = tagKey(to), fam = p => p === "T" ? "" : p;   // plain numbers and T tags are one series
+    if (fam(a[0]) !== fam(b[0])) return [];
+    const lo = Math.min(a[1], b[1]), hi = Math.max(a[1], b[1]);
+    return trees.filter(t => { const k = tagKey(t.tag); return fam(k[0]) === fam(a[0]) && k[1] >= lo && k[1] <= hi; });
+  };
+  const show = () => { const p = picked(); $("#gp_count").textContent = p == null ? "" : p.length ? `${p.length} tree${p.length === 1 ? "" : "s"} in this survey: ${tagRuns(p.map(t => t.tag))}` : "No tree of this survey has a tag in that run (the two tags need the same letters)."; };
+  $("#gp_from").oninput = $("#gp_to").oninput = show;
+  const apply = async on => {
+    const p = picked();
+    if (!p || !p.length) { toast("Type the first and last tag of the run"); return; }
+    const name = $("#gp_name").value.trim();
+    const moved = on ? p.filter(t => t.grp && grpName(t) && !grpSame(t, kind, name)) : [];
+    if (moved.length && !confirm(`${moved.length} of these trees ${moved.length === 1 ? "is" : "are"} already in another group (${[...new Set(moved.map(grpName))].join(", ")}). Move ${moved.length === 1 ? "it" : "them"}?`)) return;
+    for (const t of p) {
+      if (on) { t.grp = true; t.grpKind = kind; t.grpName = name; }
+      else { delete t.grp; delete t.grpKind; delete t.grpName; }
+      t.updated = Date.now(); await DB.put("trees", t);
+    }
+    job.updated = Date.now(); await DB.put("jobs", job);
+    toast(on ? `${p.length} tree${p.length === 1 ? "" : "s"} ${name ? "in " + name : "marked as a " + grpWord(kind).toLowerCase()}` : `${p.length} tree${p.length === 1 ? "" : "s"} taken out`);
+    groupsPage(jobId);
+  };
+  $("#gp_add").onclick = e => { e.preventDefault(); apply(true); };
+  $("#gp_out").onclick = e => { e.preventDefault(); apply(false); };
+}
+
 async function tablePage(jobId) {
   const job = await DB.get("jobs", jobId);
   if (!job) return go("#/");
@@ -755,6 +842,8 @@ async function treePage(jobId, treeId) {
   const draft = isNew && treeDraft && treeDraft.jobId === jobId ? treeDraft : null; treeDraft = null;
   const t = draft || (isNew ? { id: uid(), jobId, tag: nextTag(all, job), species: "", created: Date.now() } : await DB.get("trees", treeId));
   if (!t) return go("#/job/" + jobId);
+  // a group recorded tree by tree carries on to each new tree until it is unticked (v1.89)
+  if (isNew && !draft && job.grpCarry && job.grpCarry.on) { t.grp = true; t.grpKind = job.grpCarry.kind || "Linear"; t.grpName = job.grpCarry.name || ""; }
   const bs = job.type === "BS5837", rs = roadside(job);
   if (t.adb) t.adb = adbFix(t.adb);
   const bandChips = k => `<div class="chips bands" data-band="${k}">${BANDS[k].map(b => `<button class="chip small ${t[k] === b ? "on" : ""}" data-v="${b}">${b}</button>`).join("")}</div>`;
@@ -824,6 +913,14 @@ async function treePage(jobId, treeId) {
         <div class="hint">Works for a single tree, a group or a woodland. The report lists these as ownership to confirm before work is arranged.</div></div>
       <div id="ownWrap" ${t.ownership === "Third party" || t.ownership === "Unclear" ? "" : "hidden"}>${f("landowner", "Landowner / property (if known)", 'placeholder="e.g. Mill Farm, or 12 Station Road" autocomplete="off"')}
         <div class="hint">Trees on third-party land get a letter to the owner (Third-party trees on the PC). Name the property or owner if you can – trees with the same name share a letter.</div></div>` : ""}
+    <label class="check"><input type="checkbox" id="grpOn" ${t.grp ? "checked" : ""}> Part of a group – recorded tree by tree (a row, line or avenue, or a clump)</label>
+    <div id="grpWrap" ${t.grp ? "" : "hidden"}>
+      <div class="chips" id="grpKindPick">${GRP_KINDS.map(([v, l]) => `<button class="chip ${grpKind(t) === v ? "on" : ""}" data-v="${v}">${esc(l)}</button>`).join("")}</div>
+      <div><label for="grpNameIn">Group name or number (optional)</label><input id="grpNameIn" list="grpNames" value="${esc(t.grpName || "")}" placeholder="e.g. LG1, or lime avenue" autocomplete="off">
+        <datalist id="grpNames">${grpList(all).filter(g => g.name).map(g => `<option value="${esc(g.name)}">`).join("")}</datalist></div>
+      <div class="hint" id="grpInfo"></div>
+      <div class="hint">Stays ticked, with the same name, on each new tree until you untick it. The tree keeps its own tag and record. To put a run of trees already recorded into a group, use <b>↔ Groups by tree</b> on the tree list.</div>
+    </div>
     <details class="more" id="lineBox" ${t.end || /^(G|H|TG|W)/i.test(t.tag || "") ? "open" : ""}><summary>Hedge / group / woodland as a line or an outline</summary>
       <div class="hint">The location above is the <b>start</b>. Walk to the other end and record the <b>end</b>; add a bend wherever it changes direction. Or <b>draw it on the map</b> – add as many points as you need, in order. Tick <i>outline</i> to join the last point back to the start and show the edge of a group or woodland.</div>
       <div class="row"><button class="btn small primary" id="lineDraw">🗺 Draw on the map – several points</button></div>
@@ -1050,6 +1147,26 @@ async function treePage(jobId, treeId) {
   }
   $("#estimated").onchange = e => { t.estimated = e.target.checked; touch(); };
   $("#fullHeight").onchange = e => { t.fullHeight = e.target.checked; touch(); };
+  // part of a group: the tick, kind and name are remembered for the next new tree. On a new tree with nothing else
+  // entered yet only that choice is kept – the tick by itself does not save an empty tree.
+  const grpInfo = () => {
+    if (!t.grp) { $("#grpInfo").textContent = ""; return; }
+    const tags = all.filter(x => x.id !== t.id && grpSame(x, grpKind(t), grpName(t))).map(x => x.tag).concat(t.tag ? [t.tag] : []);
+    $("#grpInfo").textContent = `${grpName(t) || grpWord(grpKind(t)) + " (no name)"} so far: ${tagRuns(tags)} (${tags.length} tree${tags.length === 1 ? "" : "s"})`;
+  };
+  const grpKeep = async () => {
+    job.grpCarry = { on: !!t.grp, kind: grpKind(t), name: grpName(t) };
+    grpInfo();
+    if (persisted || hasContent()) touch(); else await DB.put("jobs", job);
+  };
+  $("#grpOn").onchange = e => {
+    if (e.target.checked) { t.grp = true; t.grpKind = t.grpKind || "Linear"; } else { delete t.grp; delete t.grpKind; delete t.grpName; $("#grpNameIn").value = ""; }
+    $("#grpWrap").hidden = !t.grp; $("#grpKindPick").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.v === grpKind(t))); grpKeep(); };
+  $("#grpKindPick").onclick = e => { const b = e.target.closest(".chip"); if (!b) return; e.preventDefault(); t.grpKind = b.dataset.v;
+    $("#grpKindPick").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.v === t.grpKind)); grpKeep(); };
+  $("#grpNameIn").oninput = e => { t.grpName = e.target.value; grpKeep(); };
+  $("#f_tag").addEventListener("input", grpInfo);
+  grpInfo();
   const sizeShow = () => {
     const c = sizeChange(t), el = $("#sizeInfo");
     el.innerHTML = [c.hd ? `H/D ${c.hd}` : "", c.last ? esc(c.last) : "", c.text ? `<b>${esc(c.text)}</b>` : ""].filter(Boolean).join(" · ");
@@ -1717,12 +1834,14 @@ async function buildZip(jobId) {
   const withRisk = !bs && trees.some(t => t.valid || t.qtraRoh || t.qtraT || thScore(t) !== "");
   const withCavat = !bs && trees.some(t => t.cavatValue != null);
   const withChange = !bs && trees.some(t => sizeChange(t).text);
+  for (const t of trees) if (!t.zone && t.lat != null && t.lat !== "") { const z = zoneFor(job, t.lat, t.lon); if (z) { t.zone = z; await DB.put("trees", t); } }
   const withZone = !bs && trees.some(t => t.zone);
   const withVet = !bs && trees.some(t => vetSummary(t.vet));
   const withLine = !bs && trees.some(t => t.end && t.end.lat != null);
   const withRoute = !!job.route || trees.some(t => t.direction || t.markerPost);
   const withOwn = trees.some(t => t.ownership || t.landowner);
   const withOld = trees.some(t => t.oldTag);
+  const withGrp = trees.some(t => t.grp);   // part of a group recorded tree by tree: its name (or Yes for the tick alone) and kind
   const withCol = trees.some(t => t.planColour);   // a colour chosen for the tree on plans ("Red", "Blue"…)
   const colName = t => { const c = PLAN_COLOURS.find(x => x[1] === t.planColour); return c ? c[0] : (t.planColour || ""); };
   const linePts = t => t.end && t.end.lat != null && ((t.via || []).length || t.closed)
@@ -1732,8 +1851,8 @@ async function buildZip(jobId) {
   // the day each tree was recorded, so the report can give every day of a survey that took several
   const dayOf = t => { const d = new Date(t.created || t.updated || 0); return t.created || t.updated ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : ""; };
   const withDate = trees.some(t => t.created || t.updated);
-  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withCol ? ["Plan Colour"] : []).concat(withLife ? ["Life Stage"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []).concat(withDate ? ["Date Recorded"] : []);
-  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withCol ? [colName(t)] : []).concat(withLife ? [t.lifeStage || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []).concat(withDate ? [dayOf(t)] : []);
+  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withGrp ? ["Part Of Group", "Group Kind"] : []).concat(withCol ? ["Plan Colour"] : []).concat(withLife ? ["Life Stage"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []).concat(withDate ? ["Date Recorded"] : []);
+  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withGrp ? [grpCell(t), grpKind(t)] : []).concat(withCol ? [colName(t)] : []).concat(withLife ? [t.lifeStage || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []).concat(withDate ? [dayOf(t)] : []);
   const head0 = bs ? BS_HEAD : AMR_HEAD.map(h => h === "Crown Spread (m)" ? crownHead(job) : h).concat(withRisk ? RISK_HEAD : [], withCavat ? ["CAVAT (£)"] : [], withChange ? ["Change Since Last Survey"] : [], withZone ? ["Zone"] : [], withVet ? ["Veteran Features"] : [], withLine ? ["End Grid Ref", "End Latitude", "End Longitude"] : []);
   const head = head0.concat(extraHead);
   const ws = XLSX.utils.aoa_to_sheet([head, ...trees.map(t => treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, withLine).concat(extra(t)))]);
@@ -1901,6 +2020,12 @@ const PC_FIELDS = {
   "ash dieback": { get: t => adbFix(t.adb), set: (t, v) => { const m = /^(?:cat\.?\s*)?([1-4])\b/i.exec(v.trim()); t.adb = m ? ADB[+m[1]] : adbFix(v); },
     same: (a, b) => { const c = v => { const m = /^(?:cat\.?\s*)?([1-4])\b/i.exec(String(v ?? "").trim()); return m ? m[1] : String(v ?? "").trim().toLowerCase(); }; return c(a) === c(b); } },
   "constraints": pcField("constraints"), "bat prf": pcField("batPrf"), "valid risk": pcField("valid"), "zone": pcField("zone"),
+  "part of group": { get: t => grpCell(t),
+    set: (t, v) => { v = String(v ?? "").trim(); if (!v || /^(no|n|none|false|0|-|–)$/i.test(v)) { delete t.grp; delete t.grpKind; delete t.grpName; }
+      else { t.grp = true; t.grpKind = t.grpKind || "Linear"; t.grpName = /^(yes|y|true|1)$/i.test(v) ? "" : v; } },
+    same: (a, b) => { const c = v => { v = String(v ?? "").trim().toLowerCase(); return /^(no|n|none|false|0|-|–)$/.test(v) ? "" : /^(yes|y|true|1)$/.test(v) ? "yes" : v; }; return c(a) === c(b); } },
+  "group kind": { get: t => grpKind(t), set: (t, v) => { if (t.grp || String(v ?? "").trim()) t.grpKind = /^(g|group|clump|stand|tree group|not linear|non-linear)/i.test(String(v ?? "").trim()) ? "Group" : "Linear"; },
+    same: (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase() },
   "existing tag": pcField("oldTag"), "direction": pcField("direction"), "marker post": pcField("markerPost"), "landowner": pcField("landowner"),
   "plan colour": { get: t => { const c = PLAN_COLOURS.find(x => x[1] === t.planColour); return c ? c[0] : (t.planColour || ""); },
     set: (t, v) => { const c = PLAN_COLOURS.find(x => x[0].toLowerCase() === v.trim().toLowerCase()); t.planColour = c ? c[1] : (/^auto/i.test(v) ? "" : v); } },
