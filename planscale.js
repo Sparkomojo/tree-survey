@@ -212,6 +212,17 @@ function pointInRing(pt, ring) {
   return inside;
 }
 // the zone (polygon name) a position falls in, from the job's layers
+// the usage bands of this job's zone layers, most used first – the choices for a tree's zone set on site
+function jobBands(job) {
+  const out = [];
+  for (const lay of (job && job.layers) || []) for (const f of (lay.geojson && lay.geojson.features) || []) { const b = f && f.properties && f.properties.band; if (b && !out.includes(b)) out.push(b); }
+  const rank = b => /high/i.test(b) ? 0 : /med/i.test(b) ? 1 : /low/i.test(b) ? 2 : 3;
+  return out.sort((a, b) => rank(a) - rank(b));
+}
+// the zone a tree takes from the map – unless its zone was set on site, which stays
+const zoneNow = (job, t) => t.zoneManual ? (t.zone || "") : (zoneFor(job, t.lat, t.lon) || t.zone || "");
+const zoneLine = (job, t) => { if (!t.zone) return ""; const m = t.zoneManual ? zoneFor(job, t.lat, t.lon) : "";
+  return "Zone: " + t.zone + (t.zoneManual ? " – set on site" + (m && m !== t.zone ? ` (the zones map has ${m})` : "") : ""); };
 const layHasBands = lay => !!(lay && lay.geojson && (lay.geojson.features || []).some(f => f && f.properties && f.properties.band));
 function zoneFor(job, lat, lon) {
   if (lat == null || lat === "") return "";
@@ -623,6 +634,7 @@ async function layersPage(jobId) {
 async function rezone(job) {
   let n = 0;
   for (const t of await DB.by("trees", "job", job.id)) {
+    if (t.zoneManual && t.zone) { n++; continue; }   // set on site: kept
     const z = zoneFor(job, t.lat, t.lon);
     if ((t.zone || "") !== z) { t.zone = z; await DB.put("trees", t); }
     if (z) n++;

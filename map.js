@@ -395,7 +395,7 @@ async function mapPage(jobId, mode, treeId) {
     }
     t.lat = +ll[0].toFixed(7); t.lon = +ll[1].toFixed(7); t.acc = null; t.grid = OSGB.fromLatLon(t.lat, t.lon).ref;
     t.posSource = src; t.posNote = note || ""; t.updated = Date.now();
-    t.zone = zoneFor(job, t.lat, t.lon) || t.zone || "";
+    t.zone = zoneNow(job, t);
     await DB.put("trees", t); job.updated = Date.now(); await DB.put("jobs", job);
     location.replace(`#/job/${jobId}/tree/${t.id}`);
   }
@@ -515,7 +515,7 @@ async function mapPage(jobId, mode, treeId) {
       const P = p => ({ lat: p[0], lon: p[1], src: "map" });
       const moved = had && (Math.abs(pts[0][0] - +target.lat) > 1e-7 || Math.abs(pts[0][1] - +target.lon) > 1e-7);  // point 1 was dragged
       if (!had || moved) { target.lat = pts[0][0]; target.lon = pts[0][1]; target.acc = null; target.grid = OSGB.fromLatLon(target.lat, target.lon).ref;
-        target.posSource = "map"; target.posNote = "Placed on map"; target.zone = zoneFor(job, target.lat, target.lon) || target.zone || ""; }
+        target.posSource = "map"; target.posNote = "Placed on map"; target.zone = zoneNow(job, target); }
       target.via = pts.slice(1, -1).map(P); if (!target.via.length) delete target.via;
       target.end = P(pts[pts.length - 1]);
       if (closed) target.closed = true; else delete target.closed;

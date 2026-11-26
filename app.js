@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.89";
+const APP_VERSION = "1.90";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -602,11 +602,21 @@ function nextTag(trees, job) {
   // first tree: the survey's starting tag (e.g. 2001 or T2001), otherwise T1
   if (!trees.length) return (job && job.firstTag) ? String(job.firstTag).trim().toUpperCase() : "T1";
   const last = [...trees].sort((a, b) => (a.created || 0) - (b.created || 0)).pop();
-  const prefix = roadside(job) ? "T" : tagKey(last.tag)[0];  // keep the same letter – or none, for plain numbers like 2001
-  // roadside / PROW: one number series across T and TG (T1, T2, TG3, T4 …)
-  const max = Math.max(0, ...trees.map(t => tagKey(t.tag)).filter(k => roadside(job) || k[0] === prefix).map(k => k[1]));
+  const lastP = tagKey(last.tag)[0], single = roadside(job) || lastP === "T" || lastP === "";
+  // single trees keep the survey's own style (v1.90), whatever the last tree happened to be tagged: plain numbers or
+  // T, whichever most of its single trees already have. Where they are level, the starting tag decides (2001 = plain,
+  // T2001 = T); with no starting tag, T on a roadside / PROW survey, otherwise the last tree's letter. After a G, H or W
+  // the same letter carries on as before.
+  const prefix = !single ? lastP : plainStyle(trees, job) ? "" : tagStyleT(trees, job) ? "T" : firstLetter(job) || (roadside(job) ? "T" : lastP);
+  // plain numbers and T tags are one number series (no 1609 beside T1609); roadside / PROW: one series across T and TG
+  const max = Math.max(0, ...trees.map(t => tagKey(t.tag)).filter(k => roadside(job) || (single ? k[0] === "T" || k[0] === "" : k[0] === prefix)).map(k => k[1]));
   return prefix + (max + 1);
 }
+const tagCount = (trees, p) => trees.filter(t => tagKey(t.tag)[1] && tagKey(t.tag)[0] === p).length;
+const plainStyle = (trees, job) => { const a = tagCount(trees, ""), b = tagCount(trees, "T"); return a > b || (a === b && plainTags(job)); };  // single trees carry no letter
+const tagStyleT = (trees, job) => tagCount(trees, "T") > tagCount(trees, "");
+const plainTags = job => !!(job && /^\d+$/.test(String(job.firstTag || "").trim()));          // starting tag 2001: no letter on single trees
+const firstLetter = job => job && job.firstTag ? tagKey(String(job.firstTag).trim().toUpperCase())[0] : "";
 
 // metres between two [lat, lon] points (good enough for a hedge length)
 // area in m² of a ring of [lat, lon] points (British National Grid, shoelace)
@@ -877,7 +887,7 @@ async function treePage(jobId, treeId) {
     <div class="grid2" style="align-items:end">
       <div><label for="f_tag">Tag</label><input id="f_tag" data-f="tag" value="${esc(t.tag)}" autocapitalize="characters" autocomplete="off"></div>
       <div><label for="f_oldTag">Existing tag on the tree</label><input id="f_oldTag" data-f="oldTag" value="${esc(t.oldTag || "")}" placeholder="if it has one" autocapitalize="characters" autocomplete="off"></div>
-      <div class="chips" id="prefix" style="padding-bottom:4px">${(roadside(job) ? ["T", "TG", "W"] : ["T", "G", "H", "W"]).map(p => `<button class="chip" data-p="${p}">${p}${PREFIX_WORD[p] ? ` <span style="font-weight:400">${PREFIX_WORD[p]}</span>` : ""}</button>`).join("")}</div>
+      <div class="chips" id="prefix" style="padding-bottom:4px">${(roadside(job) ? ["T", "TG", "W"] : ["T", "G", "H", "W"]).map(p => `<button class="chip" data-p="${p}">${p === "T" && plainStyle(all.filter(x => x.id !== t.id), job) ? "Tree no." : p}${PREFIX_WORD[p] ? ` <span style="font-weight:400">${PREFIX_WORD[p]}</span>` : ""}</button>`).join("")}</div>
     </div>
     <div id="dupe" class="warn" hidden>Another tree in this survey already has this tag.</div>
 
@@ -885,7 +895,11 @@ async function treePage(jobId, treeId) {
     <div class="card gps"><span class="dot" id="gdot"></span>
       <div class="status"><div class="big" id="gref">${t.grid ? esc(t.grid) : "No location yet"}</div><div class="meta" id="gstat">${t.lat ? (t.posSource && t.posSource !== "gps" ? esc(t.posNote || "Placed on map") : `±${accTxt(t.acc)} m GPS`) + ` · ${(+t.lat).toFixed(6)}, ${(+t.lon).toFixed(6)}` : "Stand by the tree and tap Get location"}</div></div>
       <button class="btn small" id="gbtn">${t.lat ? "Update" : "Get location"}</button></div>
-    <div class="hint" id="zoneOut">${t.zone ? "Zone: " + esc(t.zone) : ""}</div>
+    <div class="hint" id="zoneOut">${esc(zoneLine(job, t))}</div>
+    ${jobBands(job).length ? `<details class="more" id="zoneBox" ${t.zoneManual ? "open" : ""}><summary>Usage zone for this tree – change it on site</summary>
+      <div class="hint">A tree takes the zone it stands in on the zones map. Where the use round this tree is different – a path, bench or car park the map doesn't show – choose its zone here. It stays as you set it, whatever the map says, and goes into the report.</div>
+      <div class="chips" id="zonePick">${jobBands(job).map(b => `<button class="chip ${t.zoneManual && t.zone === b ? "on" : ""}" data-v="${esc(b)}">${esc(b)}</button>`).join("")}<button class="chip ${t.zoneManual ? "" : "on"}" data-v="">As the zones map</button></div>
+    </details>` : ""}
     <div class="row" style="margin-top:8px"><button class="btn small" id="onMap">🗺 Place on map</button><button class="btn small" id="measure">📏 Measure from 2 points</button></div>
     <details class="more" id="laserBox" ${t.posSource === "laser" ? "open" : ""}><summary>🎯 Laser offset – from where you stand</summary>
       <div class="hint">For a tree you can't stand beside, or where GPS is poor under the canopy: set where you stand, aim at the stem and fire. The tree goes at that horizontal distance along the bearing. A rangefinder with a compass (TruPulse 360i) fills both boxes; otherwise type them in (bearing from a hand compass).</div>
@@ -1147,6 +1161,14 @@ async function treePage(jobId, treeId) {
   }
   $("#estimated").onchange = e => { t.estimated = e.target.checked; touch(); };
   $("#fullHeight").onchange = e => { t.fullHeight = e.target.checked; touch(); };
+  // a usage zone set on site for this tree (v1.90): kept whatever the zones map says, until "As the zones map" is chosen
+  if ($("#zonePick")) $("#zonePick").onclick = e => {
+    const b = e.target.closest(".chip"); if (!b) return; e.preventDefault();
+    if (b.dataset.v) { t.zone = b.dataset.v; t.zoneManual = true; } else { delete t.zoneManual; t.zone = zoneFor(job, t.lat, t.lon) || ""; }
+    $("#zonePick").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", t.zoneManual ? c.dataset.v === t.zone : !c.dataset.v));
+    $("#zoneOut").textContent = zoneLine(job, t);
+    if (persisted || hasContent()) touch();
+  };
   // part of a group: the tick, kind and name are remembered for the next new tree. On a new tree with nothing else
   // entered yet only that choice is kept – the tick by itself does not save an empty tree.
   const grpInfo = () => {
@@ -1294,15 +1316,17 @@ async function treePage(jobId, treeId) {
   };
   $("#prefix").onclick = e => {  // T / G / H / W: next free number with that letter
     const b = e.target.closest(".chip"); if (!b) return;
-    const p = b.dataset.p, nums = all.filter(x => x.id !== t.id && tagKey(x.tag)[0] === p).map(x => tagKey(x.tag)[1]);
+    // on a survey numbered without letters the T chip gives the next plain number, so 1609 never sits beside T1609 (v1.90)
+    const p0 = b.dataset.p, p = p0 === "T" && plainStyle(all.filter(x => x.id !== t.id), job) ? "" : p0, fam = x => x === "T" ? "" : x;
+    const nums = all.filter(x => x.id !== t.id && fam(tagKey(x.tag)[0]) === fam(p)).map(x => tagKey(x.tag)[1]);
     // pre-numbered tags (a starting number is set): carry on the same number series; otherwise G1, H1…
     const allNums = all.filter(x => x.id !== t.id).map(x => tagKey(x.tag)[1]);
     const start = (job.firstTag || roadside(job)) ? (allNums.length ? Math.max(...allNums) + 1 : tagKey(job.firstTag || "1")[1] || 1) : 1;
     if (roadside(job)) nums.length = 0;  // one number series across T and TG
     t.tag = p + (nums.length ? Math.max(...nums) + 1 : start); $("#f_tag").value = t.tag; checkDupe();
-    if (p !== "T") $("#lineBox").open = true;
+    if (p0 !== "T") $("#lineBox").open = true;
     if (p === "W" && !t.end && !(t.via || []).length) { t.closed = true; $("#lineClosed").checked = true; lineShow(); }  // a woodland is drawn as an outline
-    if (p !== "T") { $("#moreSpHint").hidden = false; }
+    if (p0 !== "T") { $("#moreSpHint").hidden = false; }
     touch();
   };
   const rec = $("#recent"); if (rec) rec.onclick = e => { const b = e.target.closest(".chip"); if (!b) return; t.species = b.dataset.sp; $("#f_species").value = t.species; $("#f_species").dispatchEvent(new Event("input")); copyOffer(t.species); };
@@ -1361,8 +1385,8 @@ async function treePage(jobId, treeId) {
     t.lat = +c.latitude.toFixed(7); t.lon = +c.longitude.toFixed(7); t.acc = accKeep(c.accuracy);
     t.posSource = "gps"; t.posNote = "";
     t.grid = OSGB.fromLatLon(t.lat, t.lon).ref;
-    t.zone = zoneFor(job, t.lat, t.lon) || t.zone || "";
-    if ($("#zoneOut")) $("#zoneOut").textContent = t.zone ? "Zone: " + t.zone : "";
+    t.zone = zoneNow(job, t);
+    if ($("#zoneOut")) $("#zoneOut").textContent = zoneLine(job, t);
     $("#gref").textContent = t.grid || `${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
     $("#gstat").textContent = `±${accTxt(t.acc)} m · ${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
     if (persisted || hasDetails()) touch();
@@ -1469,7 +1493,7 @@ async function treePage(jobId, treeId) {
     j.lastStand = Object.assign({}, stand, { tag: t.tag || "", at: Date.now() }); delete j.lastStand.via;
     j.updated = Date.now(); await DB.put("jobs", j); job.lastStand = j.lastStand;
     $("#stLast").hidden = true;
-    t.grid = OSGB.fromLatLon(t.lat, t.lon).ref; t.zone = zoneFor(job, t.lat, t.lon) || t.zone || "";
+    t.grid = OSGB.fromLatLon(t.lat, t.lon).ref; t.zone = zoneNow(job, t);
     stopGps(); $("#gref").textContent = t.grid; $("#gstat").textContent = t.posNote;
     touch(); toast("Position set from the laser offset");
   };
@@ -1841,6 +1865,7 @@ async function buildZip(jobId) {
   const withRoute = !!job.route || trees.some(t => t.direction || t.markerPost);
   const withOwn = trees.some(t => t.ownership || t.landowner);
   const withOld = trees.some(t => t.oldTag);
+  const withZoneSet = !bs && trees.some(t => t.zoneManual && t.zone);   // a usage zone chosen on site rather than taken from the zones map
   const withGrp = trees.some(t => t.grp);   // part of a group recorded tree by tree: its name (or Yes for the tick alone) and kind
   const withCol = trees.some(t => t.planColour);   // a colour chosen for the tree on plans ("Red", "Blue"…)
   const colName = t => { const c = PLAN_COLOURS.find(x => x[1] === t.planColour); return c ? c[0] : (t.planColour || ""); };
@@ -1851,8 +1876,8 @@ async function buildZip(jobId) {
   // the day each tree was recorded, so the report can give every day of a survey that took several
   const dayOf = t => { const d = new Date(t.created || t.updated || 0); return t.created || t.updated ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : ""; };
   const withDate = trees.some(t => t.created || t.updated);
-  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withGrp ? ["Part Of Group", "Group Kind"] : []).concat(withCol ? ["Plan Colour"] : []).concat(withLife ? ["Life Stage"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []).concat(withDate ? ["Date Recorded"] : []);
-  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withGrp ? [grpCell(t), grpKind(t)] : []).concat(withCol ? [colName(t)] : []).concat(withLife ? [t.lifeStage || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []).concat(withDate ? [dayOf(t)] : []);
+  const extraHead = (withOld ? ["Existing Tag"] : []).concat(withGrp ? ["Part Of Group", "Group Kind"] : []).concat(withZoneSet ? ["Zone Set On Site"] : []).concat(withCol ? ["Plan Colour"] : []).concat(withLife ? ["Life Stage"] : []).concat(withPts ? ["Line Points", "Outline"] : []).concat(withRoute ? ["Direction", "Marker Post"] : []).concat(withOwn ? ["Ownership", "Landowner"] : []).concat(withDate ? ["Date Recorded"] : []);
+  const extra = t => (withOld ? [t.oldTag || ""] : []).concat(withGrp ? [grpCell(t), grpKind(t)] : []).concat(withZoneSet ? [t.zoneManual && t.zone ? "Yes" : ""] : []).concat(withCol ? [colName(t)] : []).concat(withLife ? [t.lifeStage || ""] : []).concat(withPts ? [linePts(t), linePts(t) && t.closed ? "Yes" : ""] : []).concat(withRoute ? [t.direction || "", t.markerPost || ""] : []).concat(withOwn ? [(t.ownership || "") + (t.ownershipNote && ["Unclear", "Not known"].includes(t.ownership) ? " – " + t.ownershipNote : ""), t.landowner || ""] : []).concat(withDate ? [dayOf(t)] : []);
   const head0 = bs ? BS_HEAD : AMR_HEAD.map(h => h === "Crown Spread (m)" ? crownHead(job) : h).concat(withRisk ? RISK_HEAD : [], withCavat ? ["CAVAT (£)"] : [], withChange ? ["Change Since Last Survey"] : [], withZone ? ["Zone"] : [], withVet ? ["Veteran Features"] : [], withLine ? ["End Grid Ref", "End Latitude", "End Longitude"] : []);
   const head = head0.concat(extraHead);
   const ws = XLSX.utils.aoa_to_sheet([head, ...trees.map(t => treeRow(t, job, withRisk, withCavat, withChange, withZone, withVet, withLine).concat(extra(t)))]);
@@ -2026,6 +2051,8 @@ const PC_FIELDS = {
     same: (a, b) => { const c = v => { v = String(v ?? "").trim().toLowerCase(); return /^(no|n|none|false|0|-|–)$/.test(v) ? "" : /^(yes|y|true|1)$/.test(v) ? "yes" : v; }; return c(a) === c(b); } },
   "group kind": { get: t => grpKind(t), set: (t, v) => { if (t.grp || String(v ?? "").trim()) t.grpKind = /^(g|group|clump|stand|tree group|not linear|non-linear)/i.test(String(v ?? "").trim()) ? "Group" : "Linear"; },
     same: (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase() },
+  "zone set on site": { get: t => t.zoneManual && t.zone ? "Yes" : "", set: (t, v) => { if (/^(yes|y|true|1)$/i.test(String(v ?? "").trim())) t.zoneManual = true; else delete t.zoneManual; },
+    same: (a, b) => /^(yes|y|true|1)$/i.test(String(a ?? "").trim()) === /^(yes|y|true|1)$/i.test(String(b ?? "").trim()) },
   "existing tag": pcField("oldTag"), "direction": pcField("direction"), "marker post": pcField("markerPost"), "landowner": pcField("landowner"),
   "plan colour": { get: t => { const c = PLAN_COLOURS.find(x => x[1] === t.planColour); return c ? c[0] : (t.planColour || ""); },
     set: (t, v) => { const c = PLAN_COLOURS.find(x => x[0].toLowerCase() === v.trim().toLowerCase()); t.planColour = c ? c[1] : (/^auto/i.test(v) ? "" : v); } },
