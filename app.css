@@ -316,3 +316,26 @@ main.wide { max-width: none; }
 .qqrow label { flex: 1; margin: 0; }
 .qqrow label span { display: block; font-weight: 400; font-size: 13px; color: var(--muted, #5c6b60); }
 .qqrow input { width: 110px; flex: none; text-align: right; }
+
+/* mark up a photo (v1.99) */
+.ph .mk-btn { position: absolute; top: 4px; left: 44px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; font-size: 17px; }
+.ph .mk-btn.on { background: var(--accent); }
+body.mk-open { overflow: hidden; }
+.mk { position: fixed; inset: 0; z-index: 3000; background: #0b0f0c; color: #fff; display: flex; flex-direction: column;
+  padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); -webkit-user-select: none; user-select: none; }
+.mk button { min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #3a463d; background: #1c2620; color: #fff; font-size: 15px; }
+.mk button.on { background: #fff; color: #0b0f0c; border-color: #fff; }
+.mk button:disabled { opacity: .4; }
+.mk button.go { background: var(--green); border-color: var(--green); font-weight: 700; }
+.mk-top { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
+.mk-top b { flex: 1; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
+.mk-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.mk-stage canvas { display: block; touch-action: none; background: #000; }
+.mk-bar { padding: 8px 10px; }
+.mk-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+#mkTools button { flex: 1; min-width: 58px; padding: 4px 6px; font-size: 13px; line-height: 1.15; }
+#mkTools button span { display: block; font-size: 18px; }
+.mk-cols { display: flex; gap: 6px; margin-right: 4px; }
+.mk-cols button { width: 38px; min-height: 38px; padding: 0; border-radius: 50%; border: 2px solid #5a665d; }
+.mk-cols button.on { outline: 3px solid var(--accent); outline-offset: 2px; border-color: #fff; }
+.mk-hint { font-size: 13px; color: #b9c6bc; min-height: 18px; }

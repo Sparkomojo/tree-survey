@@ -241,6 +241,7 @@ async function qAddPhotos(job, sel, item, after) {
 
 async function qPhotoMenu(p, job, after) {
   if (!p) return;
+  if (typeof markupPhoto === "function" && confirm("Draw on this photo – a line for a pruning cut, an arrow, a label?\n\nOK = mark it up\nCancel = caption or delete")) return void await markupPhoto(p, job, after, p.caption || "Quote visit photo");
   const c = prompt("Caption (leave empty for none). To delete the photo, type DELETE:", p.caption || "");
   if (c === null) return;
   if (c.trim().toUpperCase() === "DELETE") { if (confirm("Delete this photo?")) await DB.del("photos", p.id); }

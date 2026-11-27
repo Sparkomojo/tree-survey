@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.98";
+const APP_VERSION = "1.99";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -1098,6 +1098,7 @@ async function treePage(jobId, treeId) {
 
     <h2>Photos</h2>
     <div class="row"><button class="btn" id="takePhoto">📷 Take photo</button><button class="btn" id="pickPhoto">🖼 From gallery</button></div>
+    <p class="hint" style="margin:6px 0 0"><b>✎</b> on a photo draws on it – a line for a pruning cut, an arrow, a ring, a label. The photo as taken is kept.</p>
     <div class="photos" id="photos"></div>
 
     <details class="more" id="riskBox" ${t.valid || t.qtraRoh || t.qtraT || t.threats || rs ? "open" : ""}><summary>Risk rating ${rs ? "(VALID tolerable risk rating)" : "(optional)"}</summary>
@@ -1656,13 +1657,14 @@ async function treePage(jobId, treeId) {
     const box = $("#photos"); if (!box) return;
     box.querySelectorAll("img").forEach(i => URL.revokeObjectURL(i.src));
     box.innerHTML = list.map(p => `<div class="ph" data-id="${p.id}"><img alt="" src="${URL.createObjectURL(p.blob)}">
-      <button class="x" aria-label="Delete photo">×</button><button class="rot" aria-label="Rotate photo">↻</button>
+      <button class="x" aria-label="Delete photo">×</button><button class="rot" aria-label="Rotate photo">↻</button><button class="mk-btn${MARKUP.marked(p) ? " on" : ""}" aria-label="Mark up photo – draw on it">✎</button>
       <input placeholder="Caption, e.g. bracket fungi" value="${esc(p.caption)}"></div>`).join("");
     box.querySelectorAll(".ph").forEach(div => {
       const p = list.find(x => x.id === div.dataset.id);
       div.querySelector("input").onchange = async e => { p.caption = e.target.value.trim(); await DB.put("photos", p); touchJob(job); };
       div.querySelector(".x").onclick = async () => { if (confirm("Delete this photo?")) { await DB.del("photos", p.id); touchJob(job); drawPhotos(); } };
       div.querySelector(".rot").onclick = e => { e.preventDefault(); rotatePhoto(p, job, drawPhotos); };
+      div.querySelector(".mk-btn").onclick = e => { e.preventDefault(); markupPhoto(p, job, drawPhotos, `${t.tag || "Tree"}${p.caption ? " – " + p.caption : ""}`); };
     });
   }
   const addPhotos = async files => {
@@ -1767,7 +1769,11 @@ async function rotate90(blob) {
   bmp.close && bmp.close();
   return await new Promise(res => c.toBlob(b => res(b || blob), "image/jpeg", 0.9));
 }
-async function rotatePhoto(p, job, redraw) { p.blob = await rotate90(p.blob); p.rotated = ((p.rotated || 0) + 90) % 360; await DB.put("photos", p); touchJob(job); redraw(); }
+async function rotatePhoto(p, job, redraw) {
+  if (typeof MARKUP !== "undefined" && MARKUP.marked(p)) { p.orig = await rotate90(p.orig); await MARKUP.apply(p, MARKUP.turned(p.marks)); }  // the photo as taken and its marks turn together
+  else p.blob = await rotate90(p.blob);
+  p.rotated = ((p.rotated || 0) + 90) % 360; p.updated = Date.now(); await DB.put("photos", p); touchJob(job); redraw();
+}
 
 // ------------------------------------------------------------------ site photos (cover / site / plan / general)
 async function sitePhotosPage(jobId) {
@@ -1776,7 +1782,7 @@ async function sitePhotosPage(jobId) {
   app.innerHTML = `
   <header class="top"><button aria-label="Back" onclick="go('#/job/${jobId}')">‹</button><h1>Site photos<span class="sub">${esc(job.site)}</span></h1></header>
   <main>
-    <p class="hint">Mark one photo as <b>Cover</b> (front page) and one as <b>Site</b> (site description). Others go in the photo appendix with their caption.</p>
+    <p class="hint">Mark one photo as <b>Cover</b> (front page) and one as <b>Site</b> (site description). Others go in the photo appendix with their caption. <b>✎</b> draws on a photo.</p>
     <div class="row"><button class="btn" id="takePhoto">📷 Take photo</button><button class="btn" id="pickPhoto">🖼 From gallery</button></div>
     <div class="photos" id="photos"></div>
   </main>`;
@@ -1785,12 +1791,13 @@ async function sitePhotosPage(jobId) {
     const box = $("#photos");
     box.querySelectorAll("img").forEach(i => URL.revokeObjectURL(i.src));
     box.innerHTML = list.map(p => `<div class="ph" data-id="${p.id}"><img alt="" src="${URL.createObjectURL(p.blob)}">
-      <button class="x" aria-label="Delete photo">×</button><button class="rot" aria-label="Rotate photo">↻</button>
+      <button class="x" aria-label="Delete photo">×</button><button class="rot" aria-label="Rotate photo">↻</button><button class="mk-btn${MARKUP.marked(p) ? " on" : ""}" aria-label="Mark up photo – draw on it">✎</button>
       <select>${[["general", "Appendix photo"], ["cover", "Cover"], ["site", "Site"], ["plan", "Plan"]].map(([v, l]) => `<option value="${v}" ${p.role === v ? "selected" : ""}>${l}</option>`).join("")}</select>
       <input placeholder="Caption" value="${esc(p.caption)}"></div>`).join("") || `<div class="empty">No site photos yet.</div>`;
     box.querySelectorAll(".ph").forEach(div => {
       const p = list.find(x => x.id === div.dataset.id);
       div.querySelector(".rot").onclick = e => { e.preventDefault(); rotatePhoto(p, job, draw); };
+      div.querySelector(".mk-btn").onclick = e => { e.preventDefault(); markupPhoto(p, job, draw, p.caption || "Site photo"); };
       div.querySelector("select").onchange = async e => {
         if (e.target.value !== "general") for (const o of list) if (o !== p && o.role === e.target.value) { o.role = "general"; await DB.put("photos", o); }
         p.role = e.target.value; await DB.put("photos", p); touchJob(job); draw();
@@ -1951,6 +1958,16 @@ function crownValue(t, job, n) {
 }
 const crownHead = job => job.crownMode === "radius" ? "Crown Radius (m)" : job.crownMode === "cardinal" ? "Crown Radii N/E/S/W (m)" : "Crown Spread (m)";
 
+const UNMARKED = "Photos unmarked";   // the folder, in a survey zip and in the job folder, for marked-up photos as they were taken
+// a photo record from a zip's data.json, with its picture (and, for a marked-up photo, the photograph as taken)
+async function photoFromZip(zip, p) {
+  const f = zip.file(p.file); if (!f) return null;
+  const rec = Object.assign({}, p, { blob: new Blob([await f.async("arraybuffer")], { type: "image/jpeg" }) });
+  const o = p.unmarked && zip.file(p.unmarked);
+  if (o) rec.orig = new Blob([await o.async("arraybuffer")], { type: "image/jpeg" }); else delete rec.marks;   // marks with no original can't be changed
+  delete rec.file; delete rec.unmarked;
+  return rec;
+}
 function photoFileNames(trees, photos, feats = []) {
   const used = new Set(), names = new Map();
   const unique = base => { let n = base, i = 2; while (used.has(n.toLowerCase())) n = `${base} (${i++})`; used.add(n.toLowerCase()); return n; };
@@ -2032,7 +2049,10 @@ async function buildZip(jobId, opts = {}) {
   const names = photoFileNames(trees, photos, feats);
   const folder = zip.folder("Photos");
   for (const p of photos) folder.file(names.get(p.id), p.blob, { binary: true });
-  const strip = o => { const c = Object.assign({}, o); delete c.blob; return c; };
+  // a marked-up photo (v1.99): Photos/ has the picture with its marks – what the reports use – and the photograph as
+  // taken goes beside it under the same name, so the marks can be changed on another device and the PC keeps both
+  for (const p of photos) if (p.orig) zip.folder(UNMARKED).file(names.get(p.id), p.orig, { binary: true });
+  const strip = o => { const c = Object.assign({}, o); delete c.blob; delete c.orig; return c; };
   let planOut = null;
   const plansOut = [], used = new Set();
   for (const pl of job.plans || []) {
@@ -2050,7 +2070,7 @@ async function buildZip(jobId, opts = {}) {
   const imgs = opts.aerial ? await aerialFiles(job, zip) : [];   // only a backup carries the aerial images – they are large
   zip.file("data.json", JSON.stringify({
     format: "tree-survey", version: 1, app: APP_VERSION, grid: OSGB.method(), exported: new Date().toISOString(),
-    job: Object.assign(strip(job), { plan: planOut, plans: plansOut, layers: (job.layers || []).filter(l => l.kind !== "image") }, imgs.length ? { imageLayers: imgs } : {}), trees, photos: photos.map(p => Object.assign(strip(p), { file: "Photos/" + names.get(p.id) })), surveyFile: xlsxName, features: feats,
+    job: Object.assign(strip(job), { plan: planOut, plans: plansOut, layers: (job.layers || []).filter(l => l.kind !== "image") }, imgs.length ? { imageLayers: imgs } : {}), trees, photos: photos.map(p => Object.assign(strip(p), { file: "Photos/" + names.get(p.id) }, p.orig ? { unmarked: UNMARKED + "/" + names.get(p.id) } : {})), surveyFile: xlsxName, features: feats,
   }, null, 1));
   const blob = await zip.generateAsync({ type: "blob", mimeType: "application/zip" });
   const fname = `${safeName(job.site) || "Survey"} ${job.surveyDate || today()} survey.zip`;
@@ -2275,11 +2295,7 @@ async function importZip(file, opts = {}) {
     delete d.job.imageLayers;
     await DB.put("jobs", d.job);
     for (const t of d.trees) await DB.put("trees", t);
-    for (const p of d.photos) {
-      const f = zip.file(p.file); if (!f) continue;
-      const blob = new Blob([await f.async("arraybuffer")], { type: "image/jpeg" });
-      const rec = Object.assign({}, p, { blob }); delete rec.file; await DB.put("photos", rec);
-    }
+    for (const p of d.photos) { const rec = await photoFromZip(zip, p); if (rec) await DB.put("photos", rec); }
     if (opts.auto) return { restored: true, trees: d.trees.length, photos: d.photos.length };
     toast(`Restored ${d.job.site}: ${d.trees.length} trees` + (keepImg.length ? ` – aerial image${keepImg.length === 1 ? "" : "s"} kept` : ""), 3500); go("#/job/" + d.job.id);
   } catch (e) { console.error(e); if (opts.auto) throw e; toast("Couldn't restore: " + e.message, 5000); }
@@ -2435,12 +2451,12 @@ async function mergeZip(zip, d, job, mine, quiet) {
     else if ((t.updated || 0) > (cur.updated || 0)) { await DB.put("trees", t); updated++; take.add(t.id); }
     else kept++;
   }
-  const have = new Set((await DB.by("photos", "job", job.id)).map(p => p.id));
+  const have = new Map((await DB.by("photos", "job", job.id)).map(p => [p.id, p]));
   for (const p of d.photos || []) {
-    if (have.has(p.id) || (p.tree && !take.has(p.tree) && !byId.has(p.tree))) continue;
-    const f = zip.file(p.file); if (!f) continue;
-    const rec = Object.assign({}, p, { blob: new Blob([await f.async("arraybuffer")], { type: "image/jpeg" }) }); delete rec.file;
-    await DB.put("photos", rec); photos++;
+    const cur = have.get(p.id);   // on both devices: the zip's copy only when it was marked up or turned later (v1.99)
+    if ((cur && !((p.updated || 0) > (cur.updated || 0))) || (p.tree && !take.has(p.tree) && !byId.has(p.tree))) continue;
+    const rec = await photoFromZip(zip, p); if (!rec) continue;
+    await DB.put("photos", rec); if (!cur) photos++;
   }
   const feats = new Map((await DB.by("features", "job", job.id)).map(f => [f.id, f]));
   for (const f of d.features || []) { const cur = feats.get(f.id); if (!cur || (f.updated || 0) > (cur.updated || 0)) await DB.put("features", f); }
