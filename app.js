@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.95";
+const APP_VERSION = "1.96";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -2152,8 +2152,14 @@ async function importZip(file, opts = {}) {
         for (const l of gone) await dropLayerTiles(l);
         existing.layers = (existing.layers || []).filter(l => !gone.includes(l));
       }
+      // a starter for a survey brought in on the PC carries its trees (v1.96): taken only while this device has none
+      let took = 0;
+      if ((d.trees || []).length && !(await DB.by("trees", "job", existing.id)).length) {
+        for (const t of d.trees) { await DB.put("trees", Object.assign({}, t, { jobId: existing.id })); took++; }
+        if (d.job.crownMode && !existing.crownMode) existing.crownMode = d.job.crownMode;
+      }
       existing.updated = Date.now(); await DB.put("jobs", existing);
-      toast(`${zp.list.length} plan${zp.list.length === 1 ? "" : "s"}${nl ? ` and ${nl} map layer${nl === 1 ? "" : "s"}` : ""} updated for ${existing.site} – your trees are kept`, 3500); go("#/job/" + existing.id); return;
+      toast(`${zp.list.length} plan${zp.list.length === 1 ? "" : "s"}${nl ? ` and ${nl} map layer${nl === 1 ? "" : "s"}` : ""} updated for ${existing.site} – ` + (took ? `${took} trees from the PC added` : "your trees are kept"), 3500); go("#/job/" + existing.id); return;
     }
     if (existing) {  // the same survey from another device: add its trees, or replace what's here
       const mine = await DB.by("trees", "job", d.job.id), ids = new Set(mine.map(t => t.id));
