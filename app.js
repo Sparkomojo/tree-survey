@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.97";
+const APP_VERSION = "1.98";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -214,7 +214,7 @@ async function route() {
   const h = location.hash.replace(/^#\/?/, "").split("/");
   if (h[0] !== "ideas") {   // for the Ideas page: where the tester was just before it
     const where = h[0] === "job" ? ({ tree: "Tree page", map: "Map", table: "Table", details: "Site details", photos: "Site photos", layers: "Map layers", plan: "Site plan", safety: "Site safety check", qitem: "Quote visit item", qquote: "Quick quote" }[h[2]] || "Survey page")
-      : ({ settings: "Settings", checks: "Checks", backup: "Back up", lone: "Lone working", notes: "Route notes", new: "New survey", quote: "Quote visit" }[h[0]] || "");
+      : ({ settings: "Settings", checks: "Checks", backup: "Back up", cpd: "CPD log", lone: "Lone working", notes: "Route notes", new: "New survey", quote: "Quote visit" }[h[0]] || "");
     try { sessionStorage.setItem("tree-survey-last", where); } catch (e) { }
   }
   window.scrollTo(0, 0);
@@ -254,6 +254,7 @@ async function route() {
     if (h[0] === "checks") return await checksPage();
     if (h[0] === "backup") return await backupPage();
     if (h[0] === "ideas" && FEEDBACK) return await ideasPage();
+    if (h[0] === "cpd") return await cpdPage();
     if (h[0] === "incident" && h[1] === "new") return await incidentForm();
     if (h[0] === "check" && h[1] === "new") return await checkForm(h[2]);
     if (h[0] === "check") return await checkView(h[1]);
@@ -291,6 +292,88 @@ function installPage() {
     <p class="hint">This is version ${APP_VERSION}${installed() ? " – running as an installed app" : ""}.</p>
     <p class="hint">Tree Survey © 2026 Mark Johnson. All rights reserved.</p>
   </main>`;
+}
+
+// ------------------------------------------------------------------ CPD log (v1.98)
+// Continuing professional development noted on the day – a course, a refresher, a seminar, an evening's reading – and
+// sent to the PC as one file, where the toolkit's CPD log counts the hours against each professional body's target and
+// holds the certificates. Kept on this device until sent; not part of a survey export or a backup.
+const CPD_TYPES = ["Course / workshop", "Refresher training", "Conference / seminar", "Webinar / online learning", "Reading / private study",
+  "Field day / site visit", "Mentoring / teaching", "Committee / voluntary work", "Qualification study", "Other"];
+const CPD_HEAD = ["ID", "Date", "Activity", "Provider", "Type", "Hours", "What I learned", "From", "App version"];
+const cpdHours = v => { const n = parseFloat(String(v ?? "").replace(",", ".")); return n > 0 && n <= 200 ? Math.round(n * 100) / 100 : 0; };
+const cpdCsv = (items, who) => "﻿" + [CPD_HEAD].concat(items.map(i => [i.id, i.date, i.activity, i.provider || "", i.kind || "", i.hours, i.learned || "", i.by || who || "", i.app || ""]))
+  .map(r => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+async function cpdPage() {
+  const s = await settings();
+  const rec = (await DB.get("settings", "cpd")) || { id: "cpd", items: [] };
+  let kind = CPD_TYPES[0], editing = null;
+  const draw = () => {
+    const todo = rec.items.filter(i => !i.sent).length, year = today().slice(0, 4);
+    const thisYear = Math.round(rec.items.filter(i => (i.date || "").slice(0, 4) === year).reduce((n, i) => n + cpdHours(i.hours), 0) * 100) / 100;
+    const e = editing ? rec.items.find(i => i.id === editing) : null;
+    if (e) kind = e.kind || kind;
+    app.innerHTML = `
+    <header class="top"><button aria-label="Back" onclick="go('#/')">‹</button><h1>CPD log<span class="sub">training and learning, for your professional body</span></h1></header>
+    <main>
+      <p class="hint">Note a course, refresher, seminar, webinar or reading while it is fresh. Send the list to the PC, where the toolkit's <b>CPD log</b> counts the hours against your body's target and keeps the certificates.</p>
+      <div class="grid2"><div><label for="cpdDate">Date</label><input id="cpdDate" type="date" value="${esc(e ? e.date : today())}"></div>
+        <div><label for="cpdHours">Hours</label><input id="cpdHours" inputmode="decimal" autocomplete="off" placeholder="e.g. 5 or 1.5" value="${e ? esc(String(e.hours)) : ""}"></div></div>
+      <label for="cpdAct">Activity</label><input id="cpdAct" placeholder="e.g. QTRA update, VALID refresher, AA conference" value="${esc(e ? e.activity : "")}">
+      <label for="cpdProv">Provider (optional)</label><input id="cpdProv" placeholder="who ran it" value="${esc(e ? e.provider || "" : "")}">
+      <label>Type</label><div class="chips" id="cpdKind">${CPD_TYPES.map(k => `<button class="chip ${k === kind ? "on" : ""}" data-v="${esc(k)}">${esc(k)}</button>`).join("")}</div>
+      <label for="cpdLearn">What I learned (optional – most bodies like to see it)</label><textarea id="cpdLearn" rows="3" placeholder="What you took from it and how you'll use it">${esc(e ? e.learned || "" : "")}</textarea>
+      <div class="row" style="margin-top:8px"><button class="btn primary" id="cpdAdd">${e ? "Save changes" : "Add to the log"}</button>${e ? `<button class="btn" id="cpdCancel">Cancel</button>` : ""}</div>
+      <h2>${rec.items.length ? `${rec.items.length} activit${rec.items.length === 1 ? "y" : "ies"} on this device – ${thisYear} hour${thisYear === 1 ? "" : "s"} dated ${year}${todo ? ` · ${todo} not sent yet` : " · all sent"}` : "Nothing logged yet"}</h2>
+      ${rec.items.slice().sort((x, y) => (y.date || "").localeCompare(x.date || "")).map(i => `<div class="card" data-id="${esc(i.id)}"><div class="meta"><span class="badge">${esc(String(i.hours))} h</span> ${ukDate(i.date)} · ${esc(i.kind || "")}${i.sent ? " · sent" : ""}</div>
+        <div style="margin:4px 0"><b>${esc(i.activity)}</b>${i.provider ? " – " + esc(i.provider) : ""}</div>${i.learned ? `<div class="meta" style="white-space:pre-wrap">${esc(i.learned)}</div>` : ""}
+        <div class="row"><button class="btn small cpdEdit">Edit</button><button class="btn small cpdDel">Delete</button></div></div>`).join("")}
+      ${rec.items.length ? `<button class="btn primary block" id="cpdSend" style="margin-top:10px">Send to the PC (${todo ? todo + " new" : "all"}) – one file</button>
+      <button class="btn small" id="cpdClear" style="margin-top:8px">Remove the activities already sent</button>` : ""}
+      <p class="hint">Sending makes one file (<i>Tree Survey CPD … .csv</i>) to share or save to OneDrive. On the PC: <b>CPD log → Bring in from the tablet…</b> An activity is only ever brought in once, so sending it twice does no harm. One changed here after it was sent is sent again as new – delete the earlier one on the PC. The file holds these activities and your name from Settings – no survey data.</p>
+    </main>`;
+    $("#cpdKind").onclick = ev => { const b = ev.target.closest(".chip"); if (!b) return; kind = b.dataset.v; $("#cpdKind").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); };
+    $("#cpdAdd").onclick = async () => {
+      const activity = $("#cpdAct").value.trim(), hours = cpdHours($("#cpdHours").value), date = $("#cpdDate").value;
+      if (!activity) { toast("Say what the activity was"); $("#cpdAct").focus(); return; }
+      if (!date) { toast("Give the date"); return; }
+      if (!hours) { toast("Give the hours as a number, e.g. 5 or 1.5"); $("#cpdHours").focus(); return; }
+      const v = { date, activity, provider: $("#cpdProv").value.trim(), kind, hours, learned: $("#cpdLearn").value.trim(), by: s.consultant || "", app: APP_VERSION };
+      if (e) { const was = e.sent; Object.assign(e, v); if (was) { e.id = uid(); delete e.sent; } }   // changed after sending: goes again as a new activity
+      else rec.items.push(Object.assign({ id: uid(), at: Date.now() }, v));
+      editing = null; kind = CPD_TYPES[0];
+      await DB.put("settings", rec); toast(e ? "Saved" : "Added"); draw();
+    };
+    if ($("#cpdCancel")) $("#cpdCancel").onclick = () => { editing = null; kind = CPD_TYPES[0]; draw(); };
+    document.querySelectorAll(".cpdEdit").forEach(b => b.onclick = () => { editing = b.closest(".card").dataset.id; draw(); window.scrollTo(0, 0); });
+    document.querySelectorAll(".cpdDel").forEach(b => b.onclick = async () => {
+      const id = b.closest(".card").dataset.id;
+      if (!confirm("Delete this activity from this device?")) return;
+      rec.items = rec.items.filter(i => i.id !== id); if (editing === id) editing = null; await DB.put("settings", rec); draw();
+    });
+    if ($("#cpdSend")) $("#cpdSend").onclick = async () => {
+      const send = todo ? rec.items.filter(i => !i.sent) : rec.items;
+      const who = (s.consultant || "").replace(/[^A-Za-z0-9 ]+/g, "").trim();
+      const fname = `Tree Survey CPD ${who ? who + " " : ""}${today()}.csv`;
+      const blob = new Blob([cpdCsv(send, s.consultant)], { type: "text/csv" });
+      const file = new File([blob], fname, { type: "text/csv" });
+      let shared = false;
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: fname, text: `${send.length} CPD activities from Tree Survey` }); shared = true; }
+        catch (err) { if (err.name === "AbortError") { toast("Not sent"); return; } }
+      }
+      if (!shared) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
+      send.forEach(i => { i.sent = Date.now(); }); await DB.put("settings", rec);
+      toast(shared ? "Sent" : `Saved ${fname} to Downloads`, 3500); draw();
+    };
+    if ($("#cpdClear")) $("#cpdClear").onclick = async () => {
+      const n = rec.items.filter(i => i.sent).length;
+      if (!n) { toast("Nothing has been sent yet"); return; }
+      if (!confirm(`Remove ${n} activit${n === 1 ? "y" : "ies"} already sent from this device? They stay on the PC.`)) return;
+      rec.items = rec.items.filter(i => !i.sent); await DB.put("settings", rec); draw();
+    };
+  };
+  draw();
 }
 
 // ------------------------------------------------------------------ ideas and problems (field testing)
@@ -377,6 +460,7 @@ async function homePage() {
   const oldest = atRisk.length ? Math.min(...atRisk.map(j => j.exported || j.created || Date.now())) : 0;
   const hrs = oldest ? Math.floor((Date.now() - oldest) / 3600000) : 0;
   const ideas = FEEDBACK ? ((await DB.get("settings", "ideas")) || { items: [] }).items : [];
+  const cpdToSend = (((await DB.get("settings", "cpd")) || { items: [] }).items || []).filter(i => !i.sent).length;
   // a reminder to back up (v1.95): the last backup is 3 or more days old and a survey with trees has changed since –
   // or none has ever been made and there are trees on the device. Never shown for works orders only.
   const BACKUP_DAYS = 3, lastBackup = st_.lastBackup || 0;
@@ -403,6 +487,7 @@ async function homePage() {
       </a>`).join("") : `<div class="empty">No surveys yet.<br>Tap <b>New site survey</b> to start.</div>`}
     <p class="hint">${worksOnly ? "Works orders are saved on this phone and work without signal. Open each one to sign in, record the works and send the return when you've finished."
       : "Surveys are saved on this device and work without signal. Tap <b>Export</b> on each site when you're done to send it to your PC (OneDrive, email…)."}</p>
+    ${worksOnly ? "" : `<button class="btn block" style="margin-top:8px" onclick="go('#/cpd')">🎓 CPD log – note training or learning${cpdToSend ? ` (${cpdToSend} to send)` : ""}</button>`}
     ${FEEDBACK ? `<button class="btn block" style="margin-top:8px" onclick="go('#/ideas')">💡 Ideas and problems – note one for the developer${ideas.length ? ` (${ideas.filter(i => !i.sent).length} to send)` : ""}</button>` : ""}
     <div class="row">
       <button class="btn small" onclick="restoreZip()">Open a zip (survey, backup, plans, works pack or a file from the PC)</button>
