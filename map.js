@@ -360,6 +360,37 @@ async function noteEditor(jobId, noteId) {
   show();
 }
 
+// ---------------------------------------------------------------- a tree's first recorded position (v1.97)
+// The first time a tree that already has a position is given another one – on the map, by a new GPS fix, by a laser
+// offset or by a move made on the PC – the position it had is kept in t.pos0, so the map can show where the tree was
+// first recorded while it is being placed again, and it can be put back. Kept through every later move.
+function keepFirstPos(t) {
+  if (!t || t.pos0 || t.lat == null || t.lat === "") return;
+  const p = { lat: +t.lat, lon: +t.lon, acc: t.acc == null ? null : t.acc, grid: t.grid || "", src: t.posSource || "gps", note: t.posNote || "" };
+  if (t.offset) p.offset = t.offset;
+  if (t.end) p.end = Object.assign({}, t.end);
+  if (t.via) p.via = t.via.map(q => Object.assign({}, q));
+  t.pos0 = p;
+}
+function backToFirstPos(t) {
+  const p = t && t.pos0; if (!p) return false;
+  t.lat = p.lat; t.lon = p.lon; t.acc = p.acc; t.grid = p.grid || OSGB.fromLatLon(p.lat, p.lon).ref;
+  t.posSource = p.src; t.posNote = p.note || "";
+  if (p.offset) t.offset = p.offset; else delete t.offset;
+  if (p.end) t.end = p.end;
+  if (p.via) t.via = p.via; else if (p.end) delete t.via;
+  delete t.pos0;
+  return true;
+}
+// metres and compass direction from a to b ([lat, lon]) – for moves of a few metres to a few hundred
+function moveBetween(a, b) {
+  const dN = (b[0] - a[0]) * 111320, dE = (b[1] - a[1]) * 111320 * Math.cos((a[0] + b[0]) / 2 * Math.PI / 180);
+  const m = Math.hypot(dE, dN), ang = (Math.atan2(dE, dN) * 180 / Math.PI + 360) % 360;
+  return { m, way: ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"][Math.floor((ang + 22.5) / 45) % 8] };
+}
+const moveText = d => d.m < 0.05 ? "" : `${d.m < 100 ? d.m.toFixed(1) : Math.round(d.m)} m ${d.way}`;
+const firstPosWords = p => p.src === "gps" ? `GPS fix${p.acc != null && p.acc !== "" ? ` ±${accTxt(p.acc)} m` : ""}` : (p.note || "Placed on map");
+
 // ---------------------------------------------------------------- map page (browse / pick / measure)
 async function mapPage(jobId, mode, treeId) {
   if (mode === "note") return noteEditor(jobId, treeId);
@@ -393,6 +424,7 @@ async function mapPage(jobId, mode, treeId) {
     if (!t) {  // new tree from the map
       t = { id: uid(), jobId, tag: nextTag(trees, job), species: "", created: Date.now() };
     }
+    keepFirstPos(t);
     t.lat = +ll[0].toFixed(7); t.lon = +ll[1].toFixed(7); t.acc = null; t.grid = OSGB.fromLatLon(t.lat, t.lon).ref;
     t.posSource = src; t.posNote = note || ""; t.updated = Date.now();
     t.zone = zoneNow(job, t);
@@ -514,6 +546,7 @@ async function mapPage(jobId, mode, treeId) {
       if (closed && pts.length < 3) { toast("An outline needs at least three points"); return; }
       const P = p => ({ lat: p[0], lon: p[1], src: "map" });
       const moved = had && (Math.abs(pts[0][0] - +target.lat) > 1e-7 || Math.abs(pts[0][1] - +target.lon) > 1e-7);  // point 1 was dragged
+      if (had && moved) keepFirstPos(target);
       if (!had || moved) { target.lat = pts[0][0]; target.lon = pts[0][1]; target.acc = null; target.grid = OSGB.fromLatLon(target.lat, target.lon).ref;
         target.posSource = "map"; target.posNote = "Placed on map"; target.zone = zoneNow(job, target); }
       target.via = pts.slice(1, -1).map(P); if (!target.via.length) delete target.via;
@@ -548,9 +581,44 @@ async function mapPage(jobId, mode, treeId) {
     return;
   }
   if (mode === "pick") {
-    panel.innerHTML = `<div class="hint">Move the map so the <b>✛</b> is on the tree's stem. Pinch to zoom in close. Tap another tree to centre on it.</div>
-      <div class="row"><button class="btn" onclick="location.replace('${backTo}')">Cancel</button><button class="btn primary" id="use">Use this spot</button></div>`;
-    $("#use").onclick = () => setTreePos([map.getCenter().lat, map.getCenter().lng], "map", "Placed on map");
+    // where the tree was first recorded stays on the map while it is placed again (v1.97)
+    const had = !!target && target.lat != null && target.lat !== "";
+    const now = had ? [+target.lat, +target.lon] : null;
+    const first = had ? (target.pos0 ? [+target.pos0.lat, +target.pos0.lon] : now) : null;
+    const before = had && !!target.pos0 && moveBetween(first, now).m >= 0.05;   // already moved from where it was first recorded
+    panel.innerHTML = `<div class="hint">Move the map so the <b>✛</b> is on the tree's stem. Pinch to zoom in close. Tap another tree to centre on it.${had ? ` The grey ring is where ${esc(target.tag)} was first recorded${before ? ", the grey dot where it is now" : ""}.` : ""}</div>
+      ${had ? `<div class="meta" id="mvInfo"></div>` : ""}
+      <div class="row"><button class="btn" onclick="location.replace('${backTo}')">Cancel</button>${before ? `<button class="btn" id="mvBack">↩ Back to first recorded</button>` : ""}<button class="btn primary" id="use">Use this spot</button></div>`;
+    let far = 0;
+    if (had) {
+      const grey = "#444";
+      L.circleMarker(first, { radius: 9, color: "#fff", weight: 4, fill: false, interactive: false }).addTo(map);
+      L.circleMarker(first, { radius: 9, color: grey, weight: 2, dashArray: "4 3", fillColor: grey, fillOpacity: 0.12, interactive: false }).addTo(map)
+        .bindTooltip(`${esc(target.tag)} first recorded`, { permanent: true, direction: "bottom", className: "tlabel ghost", offset: [0, 8] });
+      if (before) L.circleMarker(now, { radius: 5, color: "#fff", weight: 1.5, fillColor: grey, fillOpacity: 0.75, interactive: false }).addTo(map)
+        .bindTooltip(`${esc(target.tag)} now`, { permanent: true, direction: "top", className: "tlabel ghost", offset: [0, -6] });
+      const halo = L.polyline([first, first], { color: "#fff", weight: 5, opacity: 0.8, interactive: false }).addTo(map);
+      const line = L.polyline([first, first], { color: grey, weight: 2, dashArray: "6 5", interactive: false }).addTo(map);
+      const tell = () => {
+        const c = map.getCenter(), here = [c.lat, c.lng], d = moveBetween(first, here), dn = before ? moveBetween(now, here) : null;
+        far = d.m; halo.setLatLngs([first, here]); line.setLatLngs([first, here]);
+        const el = $("#mvInfo"); if (!el) return;
+        el.textContent = (d.m < 0.2 ? `✛ is where ${target.tag} was first recorded (${firstPosWords(target.pos0 || { src: target.posSource || "gps", acc: target.acc, note: target.posNote })}).`
+          : `✛ is ${moveText(d)} of where ${target.tag} was first recorded (${firstPosWords(target.pos0 || { src: target.posSource || "gps", acc: target.acc, note: target.posNote })}).`)
+          + (dn ? (dn.m < 0.2 ? " Same place as now." : ` ${moveText(dn)} of where it is now.`) : "");
+      };
+      map.on("move zoom", tell); tell();
+      if (before) $("#mvBack").onclick = async () => {
+        if (!confirm(`Put ${target.tag} back where it was first recorded (${target.pos0.grid || "its first position"})?`)) return;
+        backToFirstPos(target); target.zone = zoneNow(job, target); target.updated = Date.now();
+        await DB.put("trees", target); job.updated = Date.now(); await DB.put("jobs", job);
+        location.replace(backTo);
+      };
+    }
+    $("#use").onclick = () => {
+      if (had && far > 50 && !confirm(`${target.tag} would move ${Math.round(far)} m from where it was first recorded – is that right?`)) return;
+      setTreePos([map.getCenter().lat, map.getCenter().lng], "map", "Placed on map");
+    };
     return;
   }
   // ---- measure from two known points

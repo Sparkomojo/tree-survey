@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.96";
+const APP_VERSION = "1.97";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -1431,7 +1431,7 @@ async function treePage(jobId, treeId) {
     else if (st === "error" && !t.lat) $("#gstat").textContent = "No GPS fix: " + (msg || "try again in the open");
     else if (st === "unavailable") $("#gstat").textContent = "This device has no GPS.";
   };
-  $("#gbtn").onclick = () => { if (gpsWatch !== null) { stopGps(); setState("done"); } else startGps(setFix, setState); };
+  $("#gbtn").onclick = () => { if (gpsWatch !== null) { stopGps(); setState("done"); } else { if (!isNew) keepFirstPos(t); startGps(setFix, setState); } };  // a new fix on a tree recorded earlier keeps its first position (v1.97)
   const toMap = async mode => {  // save the tree first so the map can update it
     stopGps(); dirty = true; await saveNow(); leaveHook = null;
     location.hash = `#/job/${jobId}/map/${mode}/${t.id}`;
@@ -1514,6 +1514,7 @@ async function treePage(jobId, treeId) {
     const top = $("#o_top").checked;
     const s = await settings(), dec = +s.declination || 0, add = !top && $("#o_stem").checked ? stemRadius(t.dbh) : 0;
     const [lat, lon] = offsetLL(+stand.lat, +stand.lon, hd + add, az + dec);
+    if (!isNew) keepFirstPos(t);
     t.lat = +lat.toFixed(7); t.lon = +lon.toFixed(7);
     const known = stand.src === "grid" || stand.src === "map";     // a known point with no stated accuracy adds nothing of its own
     const base = stand.acc != null && stand.acc !== "" ? +stand.acc : known ? 0 : 5;
@@ -2240,6 +2241,7 @@ PC_FIELDS["position"] = {
   set: (t, v, a) => {
     const p = pcLatLon(v); if (!p) return;
     const dLat = p[0] - (+t.lat || p[0]), dLon = p[1] - (+t.lon || p[1]);
+    keepFirstPos(t);
     t.lat = p[0]; t.lon = p[1];
     t.grid = (a && a.ref) || OSGB.fromLatLon(t.lat, t.lon).ref; t.gridManual = ""; t.w3w = "";
     t.posSource = "pc"; t.posNote = "Moved on the PC"; delete t.offset;
