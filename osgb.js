@@ -129,6 +129,84 @@ const OSGB = (() => {
     return m ? [+m[1], +m[2]] : null;
   }
 
+  // ---- a latitude and longitude as typed or pasted (v2.00) – the same reading as the PC's gps_to_kml.read_latlon
+  // 54°35'27.6"N 1°48'12.3"W (as Google Earth gives it), 54°35.460'N 1°48.205'W, 54.5910, -1.8034, 54.5910N 1.8034W.
+  // -> { lat, lon, signed } or null. signed false = the longitude has no W, E or sign: ask, never take it as east.
+  function parseLatLon(text) {
+    let s = String(text || "").toUpperCase().replace(/[−–—]/g, "-");
+    s = s.replace(/\b(LATITUDE|LONGITUDE|LAT|LONG|LNG|LON|DEGREES|DEGREE|DEG|MINUTES|MINUTE|MIN|SECONDS|SECOND|SEC|NORTH|SOUTH|EAST|WEST)\b\.?/g,
+      (m, w) => ["NORTH", "SOUTH", "EAST", "WEST"].includes(w) ? w[0] : " ");
+    if (/[A-Z]/.test(s.replace(/[NSEW]/g, ""))) return null;
+    const NUM = "[-+]?\\d+(?:\\.\\d+)?", isL = t => "NSEW".includes(t);
+    let halves = null;
+    const parts = s.split(/[,;]/).filter(h => h.trim());
+    if (parts.length === 2) halves = parts;
+    else {
+      const toks = s.match(new RegExp("[NSEW]|" + NUM, "g")) || [], letters = toks.filter(isL), nums = toks.filter(t => !isL(t));
+      if (letters.length === 2) {
+        const prefix = isL(toks[0]); let cur = []; const out = [];
+        for (const t of toks) {
+          if (isL(t)) { if (prefix) { if (cur.length) out.push(cur.join(" ")); cur = [t]; } else { out.push(cur.concat(t).join(" ")); cur = []; } }
+          else cur.push(t);
+        }
+        if (prefix && cur.length) out.push(cur.join(" "));
+        halves = out;
+      } else if (letters.length <= 1 && [2, 4, 6].includes(nums.length)) {
+        let i = toks.map((t, j) => isL(t) ? -1 : j).filter(j => j >= 0)[nums.length / 2];
+        if (letters.length && toks.indexOf(letters[0]) === i) i++;
+        halves = [toks.slice(0, i).join(" "), toks.slice(i).join(" ")];
+      }
+    }
+    if (!halves || halves.length !== 2) return null;
+    const vals = [];
+    for (const h of halves) {
+      const letters = h.match(/[NSEW]/g) || [], g = h.match(new RegExp(NUM, "g")) || [];
+      if (letters.length > 1 || g.length < 1 || g.length > 3) return null;
+      const hemi = letters[0] || null, d = parseFloat(g[0]), rest = g.slice(1).map(Number);
+      if (rest.some(x => x < 0 || x >= 60) || g.slice(1).some(x => /^[-+]/.test(x))) return null;
+      if (rest.length && d !== Math.trunc(d)) return null;
+      if (rest.length === 2 && rest[0] !== Math.trunc(rest[0])) return null;
+      const neg = g[0][0] === "-";
+      if (neg && hemi) return null;
+      const v = Math.abs(d) + (rest.length ? rest[0] / 60 : 0) + (rest.length > 1 ? rest[1] / 3600 : 0);
+      vals.push({ hemi, v: neg || hemi === "S" || hemi === "W" ? -v : v, signed: !!hemi || /^[-+]/.test(g[0]) });
+    }
+    let [a, b] = vals;
+    if ("EW".includes(a.hemi || "x") || "NS".includes(b.hemi || "x")) [a, b] = [b, a];
+    if ("EW".includes(a.hemi || "x") || "NS".includes(b.hemi || "x")) return null;
+    if (Math.abs(a.v) > 90 || Math.abs(b.v) > 180) return null;
+    return { lat: a.v, lon: b.v, signed: b.signed || b.v === 0 };
+  }
+  function dms(lat, lon) {
+    const one = (v, pos, neg) => {
+      let t = Math.round(Math.abs(v) * 36000); const d = Math.floor(t / 36000); t -= d * 36000; const m = Math.floor(t / 600); t -= m * 600;
+      return `${d}°${String(m).padStart(2, "0")}'${(t / 10).toFixed(1).padStart(4, "0")}"${v >= 0 ? pos : neg}`;
+    };
+    return one(lat, "N", "S") + " " + one(lon, "E", "W");
+  }
+  // Whatever is typed for a position – a grid ref, eastings and northings, or a latitude and longitude.
+  // -> null (not a position) | { error } | { ask: true, said } (the longitude has no W or E: call again with west true / false)
+  //  | { lat, lon, en: [E, N], ref, how: "grid" | "latlon", said }
+  function typed(text, west) {
+    const en = parse(text);
+    if (en) {
+      const ll = toLatLon(en[0], en[1]);
+      if (!ll || !isFinite(ll[0])) return { error: "That grid ref is outside the National Grid" };
+      return { lat: ll[0], lon: ll[1], en, ref: gridRef(en[0], en[1]), how: "grid", said: gridRef(en[0], en[1]) };
+    }
+    const p = parseLatLon(text);
+    if (!p) return null;
+    let { lat, lon } = p;
+    if (!p.signed) {
+      if (!(lat >= 49 && lat <= 61.5 && Math.abs(lon) <= 9)) return { error: "That latitude and longitude is not in Great Britain" };
+      if (west === undefined || west === null) return { ask: true, said: dms(lat, Math.abs(lon)).slice(0, -1) };
+      lon = west ? -Math.abs(lon) : Math.abs(lon);
+    }
+    if (!(lat >= 49 && lat <= 61.5 && lon >= -9 && lon <= 2.5)) return { error: `${dms(lat, lon)} is not in Great Britain – check the figures` };
+    const g = fromLatLon(lat, lon);
+    return { lat, lon, en: [g.E, g.N], ref: g.ref, how: "latlon", said: dms(lat, lon) };
+  }
+
   // ---- OSTN15
   const GRS80 = [6378137.0, 6356752.3141], F0 = 0.9996012717, LAT0 = rad(49), LON0 = rad(-2), N0 = -100000, E0 = 400000;
   let GRID = null;   // { cols, rows, east0, north0, east: Uint16Array, north: Uint16Array } once the shift grid is read
@@ -257,6 +335,6 @@ const OSGB = (() => {
 
   function toLatLon(E, N) { return ostnLatLon(E, N) || earlierLatLon(E, N); }
 
-  return { fromLatLon, gridRef, toLatLon, parse, load, method, setGrid, header, earlier: { toEN: earlierEN, toLatLon: earlierLatLon } };
+  return { fromLatLon, gridRef, toLatLon, parse, parseLatLon, dms, typed, load, method, setGrid, header, earlier: { toEN: earlierEN, toLatLon: earlierLatLon } };
 })();
 if (typeof module !== "undefined") module.exports = OSGB;

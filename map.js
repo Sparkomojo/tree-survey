@@ -629,7 +629,7 @@ async function mapPage(jobId, mode, treeId) {
       panel.innerHTML = `<div class="hint"><b>Point ${which}:</b> move the map so the <b>✛</b> is on something you can measure from – a building corner on the plan, a post, a tripod spot or another tree (tap it to centre) – or give a known point below.</div>
         <div class="grid2" style="align-items:end"><div><label for="d">Distance from ${which} to the tree (m)</label><input id="d" inputmode="decimal" autocomplete="off" placeholder="e.g. 12.4"></div>
         <button class="btn primary" id="setPt">Set point ${which} at ✛</button></div>
-        <div class="grid2" style="align-items:end"><div><label for="ptRef">or ${which} at a grid ref</label><input id="ptRef" placeholder="NZ 12345 67890" autocapitalize="characters" autocomplete="off"></div>
+        <div class="grid2" style="align-items:end"><div><label for="ptRef">or ${which} at a grid ref or lat / long</label><input id="ptRef" placeholder="NZ 12345 67890" autocapitalize="characters" autocomplete="off"></div>
         <button class="btn" id="setRef">Set ${which} at this grid ref</button></div>
         ${last ? `<div class="row"><button class="btn small" id="setLast">↺ ${which} at the last standpoint (${esc(last.tag || "last tree")})</button></div>` : ""}
         ${state.A ? `<div class="hint">A: ${state.A.r} m from ${esc(state.A.what)} ✓</div>` : ""}
@@ -643,10 +643,9 @@ async function mapPage(jobId, mode, treeId) {
       };
       $("#setRef").onclick = () => {
         const r = dist(); if (r === null) return;
-        const en = OSGB.parse($("#ptRef").value.trim());
-        if (!en) { toast("Type a grid ref like NZ 12345 67890, or eastings and northings like 412345, 567890", 5000); $("#ptRef").focus(); return; }
-        const ll = OSGB.toLatLon(en[0], en[1]);
-        if (!ll || !isFinite(ll[0])) { toast("That grid ref is outside the National Grid"); return; }
+        const pos = typedPosition($("#ptRef").value, $("#ptRef"));
+        if (!pos) return;
+        const en = pos.en, ll = [pos.lat, pos.lon];
         map.setView(ll, Math.max(map.getZoom(), 18), { animate: false });
         setPoint([+ll[0], +ll[1]], r, OSGB.gridRef(en[0], en[1]));
       };
@@ -793,8 +792,8 @@ async function pinPage(jobId) {
     app.innerHTML = `<header class="top"><button aria-label="Back" id="bk">‹</button><h1>Where is point ${which}?<span class="sub">${esc(job.site)}</span></h1></header>
     <main>
       <p class="hint">Give point ${which}'s real position in one of these ways:</p>
-      <label for="gr">Grid reference or easting, northing (from the plan's grid, a topo survey or OS map)</label>
-      <div class="grid2" style="grid-template-columns:1fr auto;align-items:end"><input id="gr" placeholder="NZ 15862 57871  or  415862, 557871" autocapitalize="characters" autocomplete="off"><button class="btn" id="useGr">Use</button></div>
+      <label for="gr">Grid reference, easting and northing, or a latitude and longitude – typed or pasted, minutes and seconds or decimal (from the plan's grid, a topo survey, an OS map or Google Earth)</label>
+      <div class="grid2" style="grid-template-columns:1fr auto;align-items:end"><input id="gr" placeholder="NZ 15862 57871, 415862, 557871 or 54°35'27.6&quot;N 1°48'12.3&quot;W" autocapitalize="characters" autocomplete="off"><button class="btn" id="useGr">Use</button></div>
       <button class="btn block" id="useGps" style="margin-top:12px">📍 I'm standing on it – use my GPS</button>
       <button class="btn block" id="useMap" style="margin-top:12px">🗺 Find it on the street map (needs signal)</button>
       <p class="hint" id="gpsStat"></p>
@@ -811,9 +810,9 @@ async function pinPage(jobId) {
       location.replace(`#/job/${jobId}/map`);
     };
     $("#useGr").onclick = () => {
-      const en = OSGB.parse($("#gr").value);
-      if (!en) { toast("That doesn't look like a grid reference"); return; }
-      const [lat, lon] = OSGB.toLatLon(en[0], en[1]); done(lat, lon, "grid");
+      const pos = typedPosition($("#gr").value, $("#gr"));
+      if (!pos) return;
+      done(pos.lat, pos.lon, "grid");
     };
     $("#useGps").onclick = () => {
       $("#gpsStat").textContent = "Getting your position… stand still for a moment.";

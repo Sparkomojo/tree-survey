@@ -151,7 +151,7 @@ async function locatePage(jobId) {
     const px = centrePx(map); closeMap();
     app.innerHTML = `<header class="top"><button aria-label="Back" onclick="route()">‹</button><h1>Where is it, and where's north?<span class="sub">${esc(job.site)}</span></h1></header>
     <main>
-      <label for="gr">Grid reference (or easting, northing)</label><input id="gr" placeholder="NZ 15862 57871" autocapitalize="characters" autocomplete="off">
+      <label for="gr">Grid reference (or easting, northing, or a latitude and longitude)</label><input id="gr" placeholder="NZ 15862 57871" autocapitalize="characters" autocomplete="off">
       <button class="btn block" id="gps" style="margin-top:8px">📍 I'm standing on it – use my GPS</button><p class="hint" id="gs"></p>
       <label>North on the plan points</label>
       <div class="chips" id="north">${[["0", "Up ↑"], ["90", "Right →"], ["180", "Down ↓"], ["270", "Left ←"]].map(([v, l]) => `<button class="chip ${v === "0" ? "on" : ""}" data-v="${v}">${l}</button>`).join("")}</div>
@@ -163,8 +163,9 @@ async function locatePage(jobId) {
     $("#gps").onclick = () => { $("#gs").textContent = "Getting your position…"; startGps(c => { fix = c; $("#gs").textContent = `±${Math.round(c.accuracy)} m`; }, st => { if (st === "done" && fix) $("#gs").textContent = `Got it (±${Math.round(fix.accuracy)} m)`; }); };
     $("#ok").onclick = async () => {
       let lat, lon;
-      const en = $("#gr").value.trim() ? OSGB.parse($("#gr").value) : null;
-      if (en) [lat, lon] = OSGB.toLatLon(en[0], en[1]);
+      const pos = $("#gr").value.trim() ? typedPosition($("#gr").value, $("#gr")) : null;
+      if ($("#gr").value.trim() && !pos) return;
+      if (pos) { lat = pos.lat; lon = pos.lon; }
       else if (fix) { lat = fix.latitude; lon = fix.longitude; }
       else { toast("Give a grid reference or use GPS"); return; }
       const deg = $("#deg").value.trim() ? +$("#deg").value.replace(",", ".") : north;
@@ -172,7 +173,7 @@ async function locatePage(jobId) {
       const s = job.plan.scale, th = deg * Math.PI / 180;
       const toEN = (dx, dy) => { const e = dx * (s.mppX || s.mpp), n = -dy * (s.mppY || s.mpp); return [e * Math.cos(th) + n * Math.sin(th), -e * Math.sin(th) + n * Math.cos(th)]; };
       const f = frame(lat, lon), [e2, n2] = toEN(1000, 0), B = f.ll(e2, n2);
-      job.plan.ctrl = [{ x: px.x, y: px.y, lat, lon, how: en ? "grid" : "gps" }, { x: px.x + 1000, y: px.y, lat: B[0], lon: B[1], how: "scale" }];
+      job.plan.ctrl = [{ x: px.x, y: px.y, lat, lon, how: pos ? "grid" : "gps" }, { x: px.x + 1000, y: px.y, lat: B[0], lon: B[1], how: "scale" }];
       job.plan.located = { north: deg }; job.updated = Date.now(); await DB.put("jobs", job);
       toast("Plan is on the map", 2500); location.replace(`#/job/${jobId}/map`);
     };

@@ -8,7 +8,7 @@
 "use strict";
 
 // ------------------------------------------------------------------ constants
-const APP_VERSION = "1.99";
+const APP_VERSION = "2.00";
 // text size (Settings): kept on this device, applied before anything is drawn. Its own key – Route Notes shares the origin.
 const TEXT_SIZES = ["Standard", "Large", "Larger"];
 const textSize = () => { try { return localStorage.getItem("tree-survey-text") || "Standard"; } catch (e) { return "Standard"; } };
@@ -131,6 +131,24 @@ function speciesText(t) {
   return bots.length ? `${bots.join(", ")} - ${list}` : list;
 }
 let toastTimer;
+// A position typed or pasted into a box (v2.00): a grid ref, eastings and northings, or a latitude and longitude in
+// degrees, minutes and seconds (as Google Earth gives it) or decimal degrees. -> { lat, lon, en, ref, how, said } or null
+// after telling the surveyor why. A longitude with no W, E or minus sign is asked about – never taken as east.
+function typedPosition(text, box) {
+  const txt = String(text || "").trim();
+  let r = OSGB.typed(txt);
+  if (r && r.ask) {
+    if (!confirm(`The longitude in ${r.said} has no W or E (and no minus sign).\n\nOK = it is WEST of Greenwich (most of Great Britain).\n\nCancel = stop – then type it again with E after it if the place is east (Kent, Essex, East Anglia).`)) { if (box) box.focus(); return null; }
+    r = OSGB.typed(txt, true);
+  }
+  if (!r || r.error) {
+    toast(r ? r.error : "Type a grid ref (NZ 12345 67890), eastings and northings (412345, 567890) or a latitude and longitude (54°35'27.6\"N 1°48'12.3\"W)", 6000);
+    if (box) box.focus();
+    return null;
+  }
+  if (r.how === "latlon") toast(`Read as ${r.said} = ${r.ref}`, 5000);
+  return r;
+}
 function toast(msg, ms = 2200) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), ms); }
 
 // ------------------------------------------------------------------ storage (IndexedDB)
@@ -1005,10 +1023,10 @@ async function treePage(jobId, treeId) {
         <div class="meta" id="stMeta">${t.offset ? esc(standText(t.offset.from)) : "Set where you stand – by GPS, or a known point"}</div></div></div>
       <div class="row wrap"><button class="btn small" id="stGps">📍 GPS here</button><button class="btn small" id="stAvg">⏱ Average GPS</button>
         <button class="btn small" id="stMap">🗺 Pick on map</button><button class="btn small" id="stLast" hidden></button></div>
-      <div class="grid2" style="align-items:end"><div><label for="st_ref">Known point – grid ref</label><input id="st_ref" placeholder="NZ 12345 67890" autocapitalize="characters" autocomplete="off"></div>
+      <div class="grid2" style="align-items:end"><div><label for="st_ref">Known point – grid ref or lat / long</label><input id="st_ref" placeholder="NZ 12345 67890  or  54°35'27.6&quot;N 1°48'12.3&quot;W" autocapitalize="characters" autocomplete="off"></div>
         <div><label for="st_acc">How good is it? (± m, optional)</label><input id="st_acc" inputmode="decimal" autocomplete="off" placeholder="e.g. 0.5"></div></div>
-      <div class="row"><button class="btn small" id="stRefBtn">Use this grid ref</button></div>
-      <div class="hint">A tripod over a known point: set the standpoint once – by its grid ref, or by picking the spot on the aerial photo or plan – then on each later tree tap <b>↺ Same standpoint</b>, so every tree shot from the tripod uses the same point.</div>
+      <div class="row"><button class="btn small" id="stRefBtn">Use this point</button></div>
+      <div class="hint">A tripod over a known point: set the standpoint once – by its grid ref, by a latitude and longitude typed or pasted (degrees, minutes and seconds as Google Earth gives them, or decimal degrees – it is converted for you), or by picking the spot on the aerial photo or plan – then on each later tree tap <b>↺ Same standpoint</b>, so every tree shot from the tripod uses the same point.</div>
       <div class="grid2"><div><label for="o_hd">Horizontal distance (m)</label><input id="o_hd" inputmode="decimal" value="${t.offset ? t.offset.hd : ""}"></div>
         <div><label for="o_az">Bearing to the tree (°)</label><input id="o_az" inputmode="decimal" value="${t.offset ? t.offset.az : ""}"></div></div>
       <label class="check"><input type="checkbox" id="o_stem" ${t.offset && (!t.offset.add || t.offset.top) ? "" : "checked"}> Aimed at the stem surface – add half the stem diameter</label>
@@ -1548,12 +1566,10 @@ async function treePage(jobId, treeId) {
   $("#o_stem").onchange = e => { if (e.target.checked) { $("#o_top").checked = false; $("#o_topHint").hidden = true; } };
   $("#stRefBtn").onclick = e => {
     e.preventDefault();
-    const txt = $("#st_ref").value.trim(), en = OSGB.parse(txt);
-    if (!en) { toast("Type a grid ref like NZ 12345 67890, or eastings and northings like 412345, 567890", 5000); $("#st_ref").focus(); return; }
-    const ll = OSGB.toLatLon(en[0], en[1]);
-    if (!ll || !isFinite(ll[0])) { toast("That grid ref is outside the National Grid"); return; }
+    const pos = typedPosition($("#st_ref").value, $("#st_ref"));
+    if (!pos) return;
     const a = parseFloat(String($("#st_acc").value).replace(",", "."));
-    setStand({ lat: +(+ll[0]).toFixed(7), lon: +(+ll[1]).toFixed(7), acc: a > 0 ? a : null, src: "grid", ref: OSGB.gridRef(en[0], en[1]) });
+    setStand({ lat: +(+pos.lat).toFixed(7), lon: +(+pos.lon).toFixed(7), acc: a > 0 ? a : null, src: "grid", ref: pos.ref });
   };
   // averaged GPS: a fix every 2 s for up to two minutes, polled rather than watched, so one dropped fix doesn't end it
   let avgPoll = null, avgTimer = null;
